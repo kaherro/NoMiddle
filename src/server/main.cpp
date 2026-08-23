@@ -6,11 +6,31 @@
 #include <ctime>
 
 constexpr int64_t SELF_ID = 0;
+constexpr int DEFAULT_PORT = 18080;
+constexpr const char* DEFAULT_DB_PATH = "NoMiddle.db";
 
-int main() {
+int main(int argc, char* argv[]) {
+    int port = DEFAULT_PORT;
+    std::string db_path = DEFAULT_DB_PATH;
+    if (argc > 1) {
+        try {
+            port = std::stoi(argv[1]);
+            if (port <= 0 || port > 65535) {
+                throw std::out_of_range("port out of range");
+            }
+        } catch (const std::exception &) {
+            std::cerr << "Invalid port argument: " << argv[1] << "\n";
+            return 1;
+        }
+    }
+    if (argc > 2) {
+        db_path = argv[2];
+    }
+
+
     std::unique_ptr<db_manager> db_ptr;
     try {
-        db_ptr = std::make_unique<db_manager>("NoMiddle.db");
+        db_ptr = std::make_unique<db_manager>(db_path);
     }
     catch (const std::exception &e) {
         std::cerr << "[SQL] Failed to initialize database: " << e.what() << '\n';
@@ -66,6 +86,6 @@ int main() {
         return crow::response(200);
     });
 
-    std::cout << "Server listening on http://0.0.0.0:18080\n";
-    app.port(18080).bindaddr("0.0.0.0").multithreaded().run();
+    std::cout << "Server listening on http://0.0.0.0:" << port << "\n";
+    app.port(port).bindaddr("0.0.0.0").multithreaded().run();
 }
