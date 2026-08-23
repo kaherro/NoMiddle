@@ -82,9 +82,12 @@ int main(int argc, char* argv[]) {
         int64_t recipient_id = data_json["recipient_id"].i();
         std::string text = data_json["text"].s();
         int64_t timestamp = static_cast<int64_t>(std::time(nullptr));
-        std::string message_id = deliver_message(db, SELF_ID, recipient_id, text, timestamp);
+        auto message_id = deliver_message(db, SELF_ID, recipient_id, text, timestamp);
+        if(!message_id.has_value()) {
+            return crow::response(400, crow::json::wvalue{{"error", "Error while delivering message"}});
+        }
         crow::json::wvalue res;
-        res["message_id"] = message_id;
+        res["message_id"] = message_id.value();
         return crow::response(200, res);
     });
 

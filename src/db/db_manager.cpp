@@ -90,7 +90,7 @@ bool db_manager::add_message(const message &msg) {
     sqlite3_bind_int64(stmt, 2, msg.sender_id);
     sqlite3_bind_int64(stmt, 3, msg.recipient_id);
     sqlite3_bind_text(stmt, 4, msg.text.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt, 5, msg.accepted ? 1 : 0);
+    sqlite3_bind_int(stmt, 5, msg.accepted);
     sqlite3_bind_int64(stmt, 6, msg.timestamp);
 
     rc = sqlite3_step(stmt);
@@ -105,6 +105,20 @@ bool db_manager::add_message(const message &msg) {
 
 void db_manager::mark_accepted(const std::string &message_id) {
     const char *sql = "UPDATE messages SET accepted = 1 WHERE message_id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare update: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return;
+    }
+    sqlite3_bind_text(stmt, 1, message_id.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        std::cerr << "[SQL] Update failed: " << sqlite3_errmsg(db_.get()) << std::endl;
+    }
+    sqlite3_finalize(stmt);
+}
+
+void db_manager::mark_failed(const std::string &message_id) {
+    const char *sql = "UPDATE messages SET accepted = 2 WHERE message_id = ?;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
         std::cerr << "[SQL] Failed to prepare update: " << sqlite3_errmsg(db_.get()) << std::endl;
@@ -152,7 +166,7 @@ std::vector<db_manager::message> db_manager::get_pending_messages() {
         msg.sender_id = sqlite3_column_int64(stmt, 1);
         msg.recipient_id = sqlite3_column_int64(stmt, 2);
         msg.text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
-        msg.accepted = sqlite3_column_int(stmt, 4) != 0;
+        msg.accepted = sqlite3_column_int(stmt, 4);
         msg.timestamp = sqlite3_column_int64(stmt, 5);
         result.push_back(std::move(msg));
     }
