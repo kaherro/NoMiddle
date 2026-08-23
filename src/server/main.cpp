@@ -45,6 +45,25 @@ int main(int argc, char* argv[]) {
         return crow::response(200, "ok");
     });
 
+    CROW_ROUTE(app, "/api/add_contact").methods(crow::HTTPMethod::POST)
+    ([&db](const crow::request &req) {
+        auto data_json = crow::json::load(req.body);
+        if (!data_json) {
+            return crow::response(400, crow::json::wvalue{{"error", "Invalid JSON"}});
+        }
+        if (!data_json.has("name") || !data_json.has("server_address") || !data_json.has("public_key")) {
+            return crow::response(400, crow::json::wvalue{{"error", 
+                "Missing name, server address or public_key argument"}});
+        }
+        std::string name = data_json["name"].s();
+        std::string server_address = data_json["server_address"].s();
+        std::string public_key = data_json["public_key"].s();
+        if(!db.add_contact(name, server_address, public_key)) {
+            return crow::response(500, crow::json::wvalue{{"error", "Failed to add contact"}});
+        }
+        return crow::response(200, "Contact added.");
+    });
+
     CROW_ROUTE(app, "/api/send_message").methods(crow::HTTPMethod::POST)
     ([&db](const crow::request &req) {
         auto data_json = crow::json::load(req.body);

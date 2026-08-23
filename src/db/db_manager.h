@@ -15,7 +15,8 @@ public:
         bool accepted;
         int64_t timestamp; // unix-time
     };
-
+    
+    bool add_contact(const std::string &name, const std::string &server_address, const std::string &public_key); 
     bool add_message(const message &msg);
     void mark_accepted(const std::string &message_id);
     std::string get_contact_address(int64_t contact_id);
