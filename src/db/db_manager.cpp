@@ -135,3 +135,27 @@ std::string db_manager::get_contact_address(int64_t contact_id) {
     sqlite3_finalize(stmt);
     return address;
 }
+
+std::vector<db_manager::message> db_manager::get_pending_messages() {
+    const char *sql = 
+        "SELECT message_id, sender_id, recipient_id, text, accepted, timestamp "
+        "FROM messages WHERE accepted = 0;";
+    sqlite3_stmt* stmt = nullptr;
+    std::vector<message> result;
+    if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare select pending: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return result;
+    }
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        message msg;
+        msg.message_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        msg.sender_id = sqlite3_column_int64(stmt, 1);
+        msg.recipient_id = sqlite3_column_int64(stmt, 2);
+        msg.text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        msg.accepted = sqlite3_column_int(stmt, 4) != 0;
+        msg.timestamp = sqlite3_column_int64(stmt, 5);
+        result.push_back(std::move(msg));
+    }
+    sqlite3_finalize(stmt);
+    return result;
+}
