@@ -48,6 +48,32 @@ void db_manager::init_schema() {
     std::cout << "[SQL] Schema ready.\n";
 }
 
+bool db_manager::add_contact(const std::string &name, const std::string &server_address, const std::string &public_key) {
+    const char *sql_insert =
+        "INSERT INTO contacts (name, server_address, public_key) "
+        "VALUES (?, ?, ?);";
+
+        sqlite3_stmt* stmt = nullptr;
+        int rc = sqlite3_prepare_v2(db_.get(), sql_insert, -1, &stmt, nullptr);
+        if (rc != SQLITE_OK) {
+            std::cerr << "[SQL] Failed to prepare insert: " << sqlite3_errmsg(db_.get()) << std::endl;
+            return false;
+        }
+
+        sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, server_address.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 3, public_key.c_str(), -1, SQLITE_TRANSIENT);
+
+        rc = sqlite3_step(stmt);
+        bool ok = (rc == SQLITE_DONE);
+        if (!ok) {
+            std::cerr << "[SQL] Contact insert failed: " << sqlite3_errmsg(db_.get()) << std::endl;
+        }
+
+        sqlite3_finalize(stmt);
+        return ok;
+}
+
 bool db_manager::add_message(const message &msg) {
     const char *sql_insert =
         "INSERT INTO messages (message_id, sender_id, recipient_id, text, accepted, timestamp) "
@@ -70,7 +96,7 @@ bool db_manager::add_message(const message &msg) {
     rc = sqlite3_step(stmt);
     bool ok = (rc == SQLITE_DONE);
     if (!ok) {
-        std::cerr << "[SQL] Insert failed: " << sqlite3_errmsg(db_.get()) << std::endl;
+        std::cerr << "[SQL] Message insert failed: " << sqlite3_errmsg(db_.get()) << std::endl;
     }
 
     sqlite3_finalize(stmt);
