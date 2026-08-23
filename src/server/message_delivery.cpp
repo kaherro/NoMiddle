@@ -43,3 +43,24 @@ std::string deliver_message(db_manager &db, int64_t sender_id, int64_t recipient
 
     return message_id;
 }
+
+bool retry_deliver_message(db_manager &db, const db_manager::message &msg) {
+    std::string server_address = db.get_contact_address(msg.recipient_id);
+    if (server_address.empty()) return false;
+
+    crow::json::wvalue data_json;
+    data_json["message_id"] = msg.message_id;
+    data_json["sender_id"] = msg.sender_id;
+    data_json["recipient_id"] = msg.recipient_id;
+    data_json["text"] = msg.text;
+    data_json["timestamp"] = msg.timestamp;
+
+    std::string url = "http://" + server_address + "/accept_message";
+    auto result = send_message(url, data_json.dump());
+
+    bool delivered = result.has_value() && *result == 200;
+    if (delivered) {
+        db.mark_accepted(msg.message_id);
+    }
+    return delivered;
+}
