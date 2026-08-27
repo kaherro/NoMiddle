@@ -1,9 +1,12 @@
 #include "../db/db_manager.h"
 #include "http_client.h"
 #include "message_delivery.h"
+#include "retry_worker.h"
 #include <crow.h>
 #include <iostream>
 #include <ctime>
+#include <thread>
+#include <atomic>
 
 constexpr int64_t SELF_ID = 0;
 constexpr int DEFAULT_PORT = 18080;
@@ -27,7 +30,6 @@ int main(int argc, char* argv[]) {
         db_path = argv[2];
     }
 
-
     std::unique_ptr<db_manager> db_ptr;
     try {
         db_ptr = std::make_unique<db_manager>(db_path);
@@ -37,6 +39,9 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     db_manager &db = *db_ptr;
+
+    std::atomic<bool> retry_worker_running{true};
+    std::thread thread_retry_worker(start_retrying_worker, std::ref(db), std::ref(retry_worker_running));
 
     crow::SimpleApp app;
 
@@ -52,13 +57,13 @@ int main(int argc, char* argv[]) {
             return crow::response(400, crow::json::wvalue{{"error", "Invalid JSON"}});
         }
         if (!data_json.has("name") || !data_json.has("server_address") || !data_json.has("public_key")) {
-            return crow::response(400, crow::json::wvalue{{"error", 
+            return crow::response(400, crow::json::wvalue{{"error",
                 "Missing name, server address or public_key argument"}});
         }
         std::string name = data_json["name"].s();
         std::string server_address = data_json["server_address"].s();
         std::string public_key = data_json["public_key"].s();
-        if(!db.add_contact(name, server_address, public_key)) {
+        if (!db.add_contact(name, server_address, public_key)) {
             return crow::response(500, crow::json::wvalue{{"error", "Failed to add contact"}});
         }
         return crow::response(200, "Contact added.");
@@ -77,9 +82,12 @@ int main(int argc, char* argv[]) {
         int64_t recipient_id = data_json["recipient_id"].i();
         std::string text = data_json["text"].s();
         int64_t timestamp = static_cast<int64_t>(std::time(nullptr));
-        std::string message_id = deliver_message(db, SELF_ID, recipient_id, text, timestamp);
+        auto message_id = deliver_message(db, SELF_ID, recipient_id, text, timestamp);
+        if(!message_id.has_value()) {
+            return crow::response(400, crow::json::wvalue{{"error", "Error while delivering message"}});
+        }
         crow::json::wvalue res;
-        res["message_id"] = message_id;
+        res["message_id"] = message_id.value();
         return crow::response(200, res);
     });
 
@@ -95,7 +103,7 @@ int main(int argc, char* argv[]) {
             data_json["sender_id"].i(),
             data_json["recipient_id"].i(),
             data_json["text"].s(),
-            true, 
+            true,
             data_json["timestamp"].i()
         };
 
@@ -107,4 +115,7 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Server listening on http://0.0.0.0:" << port << "\n";
     app.port(port).bindaddr("0.0.0.0").multithreaded().run();
+
+    retry_worker_running = false;
+    thread_retry_worker.join();
 }

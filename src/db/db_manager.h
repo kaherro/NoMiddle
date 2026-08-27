@@ -2,6 +2,11 @@
 #include <sqlite3.h>
 #include <string>
 #include <memory>
+#include <vector>
+
+constexpr int MESSAGE_PENDING   = 0; 
+constexpr int MESSAGE_DELIVERED = 1;
+constexpr int MESSAGE_FAILED    = 2;
 
 class db_manager {
 public:
@@ -12,14 +17,16 @@ public:
         int64_t sender_id;
         int64_t recipient_id;
         std::string text;
-        bool accepted;
+        int accepted;
         int64_t timestamp; // unix-time
     };
     
     bool add_contact(const std::string &name, const std::string &server_address, const std::string &public_key); 
     bool add_message(const message &msg);
     void mark_accepted(const std::string &message_id);
+    void mark_failed(const std::string &message_id);
     std::string get_contact_address(int64_t contact_id);
+    std::vector<message> get_pending_messages();
 
 private:
     struct sqlite3_deleter {
