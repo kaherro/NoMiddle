@@ -20,16 +20,15 @@ db_manager::db_manager(const std::string &db_path) {
 void db_manager::init_schema() {
     const char *sql_create = R"(
         CREATE TABLE IF NOT EXISTS contacts (
-            contact_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            contact_id      TEXT PRIMARY KEY, -- public_key
             name            TEXT NOT NULL,
-            server_address  TEXT,
-            public_key      TEXT
+            server_address  TEXT
         );
 
         CREATE TABLE IF NOT EXISTS messages (
             message_id      TEXT PRIMARY KEY, -- UUID
-            sender_id       INTEGER NOT NULL,
-            recipient_id    INTEGER NOT NULL,
+            sender_id       INTEGER NOT NULL, -- public_key
+            recipient_id    INTEGER NOT NULL, -- public_key
             text            TEXT NOT NULL,
             accepted        INTEGER NOT NULL DEFAULT 0,
             timestamp       INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -48,9 +47,9 @@ void db_manager::init_schema() {
     std::cout << "[SQL] Schema ready.\n";
 }
 
-bool db_manager::add_contact(const std::string &name, const std::string &server_address, const std::string &public_key) {
+bool db_manager::add_contact(const std::string &contact_id, const std::string &name, const std::string &server_address) {
     const char *sql_insert =
-        "INSERT INTO contacts (name, server_address, public_key) "
+        "INSERT INTO contacts (contact_id, name, server_address) "
         "VALUES (?, ?, ?);";
 
         sqlite3_stmt* stmt = nullptr;
@@ -60,9 +59,9 @@ bool db_manager::add_contact(const std::string &name, const std::string &server_
             return false;
         }
 
-        sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 2, server_address.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 3, public_key.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 1, contact_id.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, name.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 3, server_address.c_str(), -1, SQLITE_TRANSIENT);
 
         rc = sqlite3_step(stmt);
         bool ok = (rc == SQLITE_DONE);
