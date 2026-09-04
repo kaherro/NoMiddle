@@ -27,11 +27,12 @@ void db_manager::init_schema() {
 
         CREATE TABLE IF NOT EXISTS messages (
             message_id      TEXT PRIMARY KEY, -- UUID
-            sender_id       INTEGER NOT NULL, -- public_key
-            recipient_id    INTEGER NOT NULL, -- public_key
+            sender_id       TEXT NOT NULL, -- public_key
+            recipient_id    TEXT NOT NULL, -- public_key
             text            TEXT NOT NULL,
             accepted        INTEGER NOT NULL DEFAULT 0,
             timestamp       INTEGER NOT NULL DEFAULT (unixepoch()),
+            FOREIGN KEY (sender_id) REFERENCES contacts(contact_id),
             FOREIGN KEY (recipient_id) REFERENCES contacts(contact_id)
         );
     )";
@@ -86,8 +87,8 @@ bool db_manager::add_message(const message &msg) {
     }
 
     sqlite3_bind_text(stmt, 1, msg.message_id.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(stmt, 2, msg.sender_id);
-    sqlite3_bind_int64(stmt, 3, msg.recipient_id);
+    sqlite3_bind_text(stmt, 2, msg.sender_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, msg.recipient_id.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 4, msg.text.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt, 5, msg.accepted);
     sqlite3_bind_int64(stmt, 6, msg.timestamp);
@@ -130,7 +131,7 @@ void db_manager::mark_failed(const std::string &message_id) {
     sqlite3_finalize(stmt);
 }
 
-std::string db_manager::get_contact_address(int64_t contact_id) {
+std::string db_manager::get_contact_address(const std::string& contact_id) {
     const char *sql = "SELECT server_address FROM contacts WHERE contact_id = ?;";
     sqlite3_stmt* stmt = nullptr;
     std::string address = "";
@@ -139,7 +140,7 @@ std::string db_manager::get_contact_address(int64_t contact_id) {
         std::cerr << "[SQL] Failed to prepare select: " << sqlite3_errmsg(db_.get()) << std::endl;
         return address;
     }
-    sqlite3_bind_int64(stmt, 1, contact_id);
+    sqlite3_bind_text(stmt, 1, contact_id.c_str(), -1, SQLITE_TRANSIENT);
 
     if(sqlite3_step(stmt) == SQLITE_ROW) {
         const unsigned char* text = sqlite3_column_text(stmt, 0);
@@ -150,7 +151,7 @@ std::string db_manager::get_contact_address(int64_t contact_id) {
 }
 
 std::vector<db_manager::message> db_manager::get_pending_messages() {
-    const char *sql = 
+    const char *sql =
         "SELECT message_id, sender_id, recipient_id, text, accepted, timestamp "
         "FROM messages WHERE accepted = 0;";
     sqlite3_stmt* stmt = nullptr;
@@ -162,8 +163,8 @@ std::vector<db_manager::message> db_manager::get_pending_messages() {
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         message msg;
         msg.message_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-        msg.sender_id = sqlite3_column_int64(stmt, 1);
-        msg.recipient_id = sqlite3_column_int64(stmt, 2);
+        msg.sender_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        msg.recipient_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
         msg.text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
         msg.accepted = sqlite3_column_int(stmt, 4);
         msg.timestamp = sqlite3_column_int64(stmt, 5);

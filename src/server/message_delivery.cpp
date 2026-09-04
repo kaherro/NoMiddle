@@ -28,7 +28,7 @@ std::string generate_uuid() {
     return uuid; 
 }
 
-std::optional<std::string> deliver_message(db_manager &db, int64_t sender_id, int64_t recipient_id, 
+std::optional<std::string> deliver_message(db_manager &db, const std::string &sender_id, const std::string &recipient_id,
     const std::string &text, int64_t timestamp) {
 
     std::string message_id = generate_uuid();

@@ -3,13 +3,14 @@
 #include "message_delivery.h"
 #include "retry_worker.h"
 #include "crypto/key_manager.h"
+#include "crypto/message_crypto.h"
 #include <crow.h>
 #include <iostream>
 #include <ctime>
 #include <thread>
 #include <atomic>
+#include <optional>
 
-constexpr int64_t SELF_ID = 0;
 constexpr int DEFAULT_PORT = 18080;
 constexpr const char* DEFAULT_DB_PATH = "NoMiddle.db";
 
@@ -19,7 +20,8 @@ int main(int argc, char* argv[]) {
         std::cerr << "Failed to load or generate keypair\n";
         return 3;
     }
-    std::cout << "My public key: " << keys->public_key_b64 << "\n";
+    std::string self_public_key = keys->public_key_b64;
+    std::cout << "My public key: " << self_public_key << "\n";
 
     
     int port = DEFAULT_PORT;
@@ -79,7 +81,7 @@ int main(int argc, char* argv[]) {
     });
 
     CROW_ROUTE(app, "/api/send_message").methods(crow::HTTPMethod::POST)
-    ([&db](const crow::request &req) {
+    ([&db, &self_public_key, &keys](const crow::request &req) {
         auto data_json = crow::json::load(req.body);
         if (!data_json) {
             return crow::response(400, crow::json::wvalue{{"error", "Invalid JSON"}});
@@ -87,11 +89,14 @@ int main(int argc, char* argv[]) {
         if (!data_json.has("recipient_id") || !data_json.has("text")) {
             return crow::response(400, crow::json::wvalue{{"error", "Missing recipient_id or text"}});
         }
-
-        int64_t recipient_id = data_json["recipient_id"].i();
-        std::string text = data_json["text"].s();
+        std::string recipient_id = data_json["recipient_id"].s();
+        std::string plaintext = data_json["text"].s();
         int64_t timestamp = static_cast<int64_t>(std::time(nullptr));
-        auto message_id = deliver_message(db, SELF_ID, recipient_id, text, timestamp);
+        std::optional<std::string> ciphertext = encrypt_message(plaintext, recipient_id, keys->private_key_b64);
+        if (!ciphertext) {
+            return crow::response(400, crow::json::wvalue{{"error", "Failed to encrypt message"}});
+        }
+        auto message_id = deliver_message(db, self_public_key, recipient_id, *ciphertext, timestamp);
         if(!message_id.has_value()) {
             return crow::response(400, crow::json::wvalue{{"error", "Error while delivering message"}});
         }
@@ -101,21 +106,30 @@ int main(int argc, char* argv[]) {
     });
 
     CROW_ROUTE(app, "/accept_message").methods(crow::HTTPMethod::POST)
-    ([&db](const crow::request &req) {
+    ([&db, &self_public_key, &keys](const crow::request &req) {
         auto data_json = crow::json::load(req.body);
         if (!data_json) {
             return crow::response(400, crow::json::wvalue{{"error", "Invalid JSON"}});
         }
-
+        std::string sender_id = data_json["sender_id"].s();
+        std::string recipient_id = data_json["recipient_id"].s();
+        std::string ciphertext = data_json["text"].s();
+        int64_t timestamp = data_json["timestamp"].i();
+        if (recipient_id != self_public_key) {
+            return crow::response(400, crow::json::wvalue{{"error", "Message not intended for this user"}});
+        }
+        std::optional<std::string> plaintext = decrypt_message(ciphertext, sender_id, keys->private_key_b64);
+        if (!plaintext) {
+            return crow::response(400, crow::json::wvalue{{"error", "Failed to decrypt message"}});
+        }
         db_manager::message msg{
             data_json["message_id"].s(),
-            data_json["sender_id"].i(),
-            data_json["recipient_id"].i(),
-            data_json["text"].s(),
+            sender_id,
+            recipient_id,
+            ciphertext,
             true,
-            data_json["timestamp"].i()
+            timestamp
         };
-
         if (!db.add_message(msg)) {
             return crow::response(500, crow::json::wvalue{{"error", "Failed to store message"}});
         }

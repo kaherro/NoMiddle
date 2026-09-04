@@ -14,8 +14,8 @@ public:
 
     struct message {
         std::string message_id; // UUID
-        int64_t sender_id;
-        int64_t recipient_id;
+        std::string sender_id;
+        std::string recipient_id;
         std::string text;
         int accepted;
         int64_t timestamp; // unix-time
@@ -24,7 +24,7 @@ public:
     bool add_message(const message &msg);
     void mark_accepted(const std::string &message_id);
     void mark_failed(const std::string &message_id);
-    std::string get_contact_address(int64_t contact_id);
+    std::string get_contact_address(const std::string& contact_id);
     std::vector<message> get_pending_messages();
 
 private:
