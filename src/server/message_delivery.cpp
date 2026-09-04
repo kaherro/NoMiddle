@@ -8,9 +8,24 @@
 std::string generate_uuid() {
     static std::random_device rd;
     static std::mt19937_64 gen(rd());
-    static std::uniform_int_distribution<uint64_t> dist;
-    uint64_t a = dist(gen);
-    return std::to_string(a); 
+    static std::uniform_int_distribution<uint64_t> dist(0, 15);
+    const char* chars = "0123456789abcdef"; 
+    std::string uuid; 
+    for(int i = 0; i < 36; i++) {
+        if(i == 8 || i == 13 || i == 18 || i == 23) {
+            uuid.push_back('-'); 
+        }
+        else if(i == 14) {
+            uuid.push_back('4'); 
+        }
+        else if(i == 19) {
+            uuid.push_back(chars[dist(gen) & 3 | 8]);
+        }
+        else {
+            uuid.push_back(chars[dist(gen)]);
+        }
+    }
+    return uuid; 
 }
 
 std::optional<std::string> deliver_message(db_manager &db, int64_t sender_id, int64_t recipient_id, 

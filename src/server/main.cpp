@@ -2,6 +2,7 @@
 #include "http_client.h"
 #include "message_delivery.h"
 #include "retry_worker.h"
+#include "crypto/key_manager.h"
 #include <crow.h>
 #include <iostream>
 #include <ctime>
@@ -13,6 +14,14 @@ constexpr int DEFAULT_PORT = 18080;
 constexpr const char* DEFAULT_DB_PATH = "NoMiddle.db";
 
 int main(int argc, char* argv[]) {
+    auto keys = load_or_create_keypair("private_key.bin");
+    if (!keys) {
+        std::cerr << "Failed to load or generate keypair\n";
+        return 3;
+    }
+    std::cout << "My public key: " << keys->public_key_b64 << "\n";
+
+    
     int port = DEFAULT_PORT;
     std::string db_path = DEFAULT_DB_PATH;
     if (argc > 1) {
@@ -56,14 +65,14 @@ int main(int argc, char* argv[]) {
         if (!data_json) {
             return crow::response(400, crow::json::wvalue{{"error", "Invalid JSON"}});
         }
-        if (!data_json.has("name") || !data_json.has("server_address") || !data_json.has("public_key")) {
+        if (!data_json.has("name") || !data_json.has("server_address") || !data_json.has("contact_id")) {
             return crow::response(400, crow::json::wvalue{{"error",
-                "Missing name, server address or public_key argument"}});
+                "Missing contact_id, name or server address argument"}});
         }
+        std::string contact_id = data_json["contact_id"].s();
         std::string name = data_json["name"].s();
         std::string server_address = data_json["server_address"].s();
-        std::string public_key = data_json["public_key"].s();
-        if (!db.add_contact(name, server_address, public_key)) {
+        if (!db.add_contact(contact_id, name, server_address)) {
             return crow::response(500, crow::json::wvalue{{"error", "Failed to add contact"}});
         }
         return crow::response(200, "Contact added.");
