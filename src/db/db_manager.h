@@ -30,6 +30,15 @@ public:
     std::string get_contact_address(const std::string& contact_id);
     std::vector<message> get_pending_messages();
 
+    struct contact_info {
+        std::string contact_id;
+        std::string name;
+        std::string server_address;
+        std::optional<message> latest_message; 
+    };
+    std::vector<contact_info> get_contacts_with_latest_message(const std::string& self_id);
+    std::vector<message> get_messages_between(const std::string& self_id, const std::string& other_id);
+
 private:
     struct sqlite3_deleter {
         void operator()(sqlite3* db) const {

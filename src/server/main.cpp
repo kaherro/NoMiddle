@@ -138,6 +138,59 @@ int main(int argc, char* argv[]) {
         }
         return crow::response(200);
     });
+    CROW_ROUTE(app, "/api/contacts").methods(crow::HTTPMethod::GET)
+    ([&db, &self_public_key](const crow::request &req) {
+        auto contacts = db.get_contacts_with_latest_message(self_public_key);
+        crow::json::wvalue result;
+        std::vector<crow::json::wvalue> res;
+        for (const auto &c : contacts) {
+            crow::json::wvalue obj;
+            obj["contact_id"] = c.contact_id;
+            obj["name"] = c.name;
+            obj["server_address"] = c.server_address;
+            if (c.latest_message) {
+                const auto &m = *c.latest_message;
+                crow::json::wvalue msg;
+                msg["message_id"] = m.message_id;
+                msg["sender_id"] = m.sender_id;
+                msg["recipient_id"] = m.recipient_id;
+                msg["plaintext"] = m.plaintext;
+                msg["accepted"] = m.accepted;
+                msg["timestamp"] = m.timestamp;
+                obj["latest_message"] = std::move(msg);
+            } 
+            else {
+                obj["latest_message"] = nullptr;
+            }
+            res.push_back(std::move(obj));
+        }
+        result["contacts"] = std::move(res);
+        return crow::response(200, result);
+    });
+
+    CROW_ROUTE(app, "/api/messages").methods(crow::HTTPMethod::GET)
+    ([&db, &self_public_key](const crow::request &req) {
+        const char* contact_cstr = req.url_params.get("contact_id");
+        if (!contact_cstr) {
+            return crow::response(400, crow::json::wvalue{{"error", "Missing contact_id parameter"}});
+        }
+        std::string contact_id(contact_cstr);
+        auto messages = db.get_messages_between(self_public_key, contact_id);
+        crow::json::wvalue result;
+        std::vector<crow::json::wvalue> arr;
+        for (const auto &m : messages) {
+            crow::json::wvalue obj;
+            obj["message_id"] = m.message_id;
+            obj["sender_id"] = m.sender_id;
+            obj["recipient_id"] = m.recipient_id;
+            obj["plaintext"] = m.plaintext;
+            obj["accepted"] = m.accepted;
+            obj["timestamp"] = m.timestamp;
+            arr.push_back(std::move(obj));
+        }
+        result["messages"] = std::move(arr);
+        return crow::response(200, result);
+    });
 
     std::cout << "Server listening on http://0.0.0.0:" << port << "\n";
     app.port(port).bindaddr("0.0.0.0").multithreaded().run();
