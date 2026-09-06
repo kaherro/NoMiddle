@@ -15,14 +15,6 @@ constexpr int DEFAULT_PORT = 18080;
 constexpr const char* DEFAULT_DB_PATH = "NoMiddle.db";
 
 int main(int argc, char* argv[]) {
-    auto keys = load_or_create_keypair("private_key.bin");
-    if (!keys) {
-        std::cerr << "Failed to load or generate keypair\n";
-        return 3;
-    }
-    std::string self_public_key = keys->public_key_b64;
-    std::cout << "My public key: " << self_public_key << "\n";
-
     int port = DEFAULT_PORT;
     std::string db_path = DEFAULT_DB_PATH;
     if (argc > 1) {
@@ -39,6 +31,14 @@ int main(int argc, char* argv[]) {
     if (argc > 2) {
         db_path = argv[2];
     }
+
+    auto keys = load_or_create_keypair("private_key" + std::to_string(port) + ".bin");
+    if (!keys) {
+        std::cerr << "Failed to load or generate keypair\n";
+        return 3;
+    }
+    std::string self_public_key = keys->public_key_b64;
+    std::cout << "My public key: " << self_public_key << "\n";
 
     std::unique_ptr<db_manager> db_ptr;
     try {
