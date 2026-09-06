@@ -28,11 +28,20 @@ std::string generate_uuid() {
     return uuid; 
 }
 
+void cut_server_address(std::string &server_address) {
+    if (server_address.rfind("http://", 0) == 0) {
+        server_address = server_address.substr(7); 
+    } 
+    else if (server_address.rfind("https://", 0) == 0) {
+        server_address = server_address.substr(8); 
+    }
+}
+
 std::optional<std::string> deliver_message(db_manager &db, const std::string &sender_id, const std::string &recipient_id,
-    const std::string &text, int64_t timestamp) {
+    const std::string &ciphertext, const std::string &plaintext, int64_t timestamp) {
 
     std::string message_id = generate_uuid();
-    db_manager::message msg{message_id, sender_id, recipient_id, text, false, timestamp};
+    db_manager::message msg{message_id, sender_id, recipient_id, plaintext, ciphertext, false, timestamp};
     if(!db.add_message(msg)) {
         return std::nullopt;
     }
@@ -41,12 +50,13 @@ std::optional<std::string> deliver_message(db_manager &db, const std::string &se
     // if(server_address.empty()) {
     //     return std::nullopt;
     // }
+    cut_server_address(server_address); 
 
     crow::json::wvalue data_json;
     data_json["message_id"]   = message_id;
     data_json["sender_id"]    = sender_id;
     data_json["recipient_id"] = recipient_id;
-    data_json["text"]         = text;
+    data_json["ciphertext"]         = ciphertext;
     data_json["timestamp"]    = timestamp;
 
     std::string url = "http://" + server_address + "/accept_message";
@@ -54,20 +64,24 @@ std::optional<std::string> deliver_message(db_manager &db, const std::string &se
 
     if (result.has_value() && *result == 200) {
         db.mark_accepted(message_id);
+        return message_id;
+    } 
+    else {
+        return std::nullopt; 
     }
-
-    return message_id;
 }
 
 bool retry_deliver_message(db_manager &db, const db_manager::message &msg) {
     std::string server_address = db.get_contact_address(msg.recipient_id);
     if (server_address.empty()) return false;
+    cut_server_address(server_address); 
 
     crow::json::wvalue data_json;
     data_json["message_id"] = msg.message_id;
     data_json["sender_id"] = msg.sender_id;
     data_json["recipient_id"] = msg.recipient_id;
-    data_json["text"] = msg.text;
+    // data_json["plaintext"] = msg.plaintext;
+    data_json["ciphertext"] = msg.ciphertext;
     data_json["timestamp"] = msg.timestamp;
 
     std::string url = "http://" + server_address + "/accept_message";

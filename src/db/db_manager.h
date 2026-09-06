@@ -3,6 +3,7 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <optional>
 
 constexpr int MESSAGE_PENDING   = 0; 
 constexpr int MESSAGE_DELIVERED = 1;
@@ -16,10 +17,12 @@ public:
         std::string message_id; // UUID
         std::string sender_id;
         std::string recipient_id;
-        std::string text;
+        std::string plaintext;
+        std::string ciphertext; 
         int accepted;
         int64_t timestamp; // unix-time
     };
+
     bool add_contact(const std::string &contact_id, const std::string &name, const std::string &server_address);
     bool add_message(const message &msg);
     void mark_accepted(const std::string &message_id);

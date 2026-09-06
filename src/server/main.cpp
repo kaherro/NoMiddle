@@ -23,7 +23,6 @@ int main(int argc, char* argv[]) {
     std::string self_public_key = keys->public_key_b64;
     std::cout << "My public key: " << self_public_key << "\n";
 
-    
     int port = DEFAULT_PORT;
     std::string db_path = DEFAULT_DB_PATH;
     if (argc > 1) {
@@ -96,7 +95,7 @@ int main(int argc, char* argv[]) {
         if (!ciphertext) {
             return crow::response(400, crow::json::wvalue{{"error", "Failed to encrypt message"}});
         }
-        auto message_id = deliver_message(db, self_public_key, recipient_id, *ciphertext, timestamp);
+        auto message_id = deliver_message(db, self_public_key, recipient_id, *ciphertext, plaintext, timestamp);
         if(!message_id.has_value()) {
             return crow::response(400, crow::json::wvalue{{"error", "Error while delivering message"}});
         }
@@ -108,12 +107,15 @@ int main(int argc, char* argv[]) {
     CROW_ROUTE(app, "/accept_message").methods(crow::HTTPMethod::POST)
     ([&db, &self_public_key, &keys](const crow::request &req) {
         auto data_json = crow::json::load(req.body);
-        if (!data_json) {
+        if(!data_json) {
             return crow::response(400, crow::json::wvalue{{"error", "Invalid JSON"}});
+        }
+        if(!data_json.has("sender_id") || !data_json.has("recipient_id") || !data_json.has("ciphertext") || !data_json.has("timestamp")) {
+            return crow::response(400, crow::json::wvalue{{"error", "Missing of the arguments"}});
         }
         std::string sender_id = data_json["sender_id"].s();
         std::string recipient_id = data_json["recipient_id"].s();
-        std::string ciphertext = data_json["text"].s();
+        std::string ciphertext = data_json["ciphertext"].s();
         int64_t timestamp = data_json["timestamp"].i();
         if (recipient_id != self_public_key) {
             return crow::response(400, crow::json::wvalue{{"error", "Message not intended for this user"}});
@@ -126,6 +128,7 @@ int main(int argc, char* argv[]) {
             data_json["message_id"].s(),
             sender_id,
             recipient_id,
+            plaintext.value(),
             ciphertext,
             true,
             timestamp
