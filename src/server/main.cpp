@@ -192,6 +192,13 @@ int main(int argc, char* argv[]) {
         return crow::response(200, result);
     });
 
+    CROW_ROUTE(app, "/api/public_key").methods(crow::HTTPMethod::GET)
+    ([&self_public_key](const crow::request &req) {
+        crow::json::wvalue result;
+        result["public_key"] = self_public_key;
+        return crow::response(200, result);
+    });
+
     std::cout << "Server listening on http://0.0.0.0:" << port << "\n";
     app.port(port).bindaddr("0.0.0.0").multithreaded().run();
 
