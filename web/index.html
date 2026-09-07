@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>NoMiddle</title>
+    <link rel="icon" type="image/x-icon" href="favicon.png">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    
+<div id="messenger-window">
+    <div id="left-column">
+        <div id="messenger-info">
+            <svg xmlns="http://w3.org" width="20" height="14" viewBox="0 0 20 14">
+                <line x1="6" y1="4" x2="14" y2="10" stroke="#4fd1ae" stroke-width="2.5" stroke-linecap="round"></line>
+                <circle cx="5" cy="3.5" r="3.5" fill="#4fd1ae"></circle>
+                <circle cx="15" cy="10.5" r="3.5" fill="#4fd1ae"></circle>
+            </svg>
+            <div id="messenger-naming">NoMiddle</div>
+        </div>
+        <div id="public-key">
+            <div id="public-key-label">My public Key:</div>
+            <div id="public-key-value">—</div>
+            <button id="public-key-copy">Copy</button>
+        </div>
+        <div id="contacts">
+            <div id="contacts-header">
+                <div id="contacts-label">Contacts</div>
+                <div id="add-contact">
+                    <button id="add-contact-button">+</button>
+                </div>
+            </div>
+            <div id="contacts-list">
+                <div class="contact">
+                    <div>
+                        <div class="contact-name">Bob</div>
+                        <div class="latest-message">Latest message was 3 minutes ago</div>
+                    </div>
+                    <button class="settings-button">
+                        <div class="settings-icon" style="width: 22px; height: 22px; ">
+                            <svg xmlns="http://w3.org" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#8b93a3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" />
+                                <path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
+                            </svg>
+                        </div>
+                    </button>
+                </div>
+                <div class="contact">
+                    <div>
+                        <div class="contact-name">Alice</div>
+                        <div class="latest-message">Latest message was 5 minutes ago</div>
+                    </div>
+                    <button class="settings-button">
+                        <div class="settings-icon" style="width: 22px; height: 22px; ">
+                            <svg xmlns="http://w3.org" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#8b93a3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" />
+                                <path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
+                            </svg>
+                        </div>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="right-column">
+        <div class="contact-name", id="contact-name-right">Bob</div>
+        <div id="messages-list">
+            <div class="message theirs">
+                <div class="message-text">Hello. How is the weather today?</div>
+            </div>
+            <div class="message mine">
+                <div class="message-text">It's sunny and warm today!</div>
+                <div class="message-status">✓✓</div>
+            </div>
+            <div class="message theirs">
+                <div class="message-text">Great! Let me know when you're ready for the meeting</div>
+            </div>
+            <div class="message mine">
+                <div class="message-text">I'll be ready soon</div>
+                <div class="message-status">✓</div>
+            </div>
+        </div>
+        <div id="message-field">
+            <input type="text" id="message-text" placeholder="Message">
+            <button id="send-button">Send</button>
+        </div>
+    </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
