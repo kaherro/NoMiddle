@@ -3,6 +3,7 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <optional>
 
 constexpr int MESSAGE_PENDING   = 0; 
 constexpr int MESSAGE_DELIVERED = 1;
@@ -14,18 +15,29 @@ public:
 
     struct message {
         std::string message_id; // UUID
-        int64_t sender_id;
-        int64_t recipient_id;
-        std::string text;
+        std::string sender_id;
+        std::string recipient_id;
+        std::string plaintext;
+        std::string ciphertext; 
         int accepted;
         int64_t timestamp; // unix-time
     };
+
     bool add_contact(const std::string &contact_id, const std::string &name, const std::string &server_address);
     bool add_message(const message &msg);
     void mark_accepted(const std::string &message_id);
     void mark_failed(const std::string &message_id);
-    std::string get_contact_address(int64_t contact_id);
+    std::string get_contact_address(const std::string& contact_id);
     std::vector<message> get_pending_messages();
+
+    struct contact_info {
+        std::string contact_id;
+        std::string name;
+        std::string server_address;
+        std::optional<message> latest_message; 
+    };
+    std::vector<contact_info> get_contacts_with_latest_message(const std::string& self_id);
+    std::vector<message> get_messages_between(const std::string& self_id, const std::string& other_id);
 
 private:
     struct sqlite3_deleter {
