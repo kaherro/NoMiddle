@@ -85,7 +85,7 @@ int main(int argc, char* argv[]) {
         return crow::response(404);
     });
 
-    CROW_ROUTE(app, "/api/add_contact").methods(crow::HTTPMethod::POST)
+    CROW_ROUTE(app, "/api/add_contact").methods(crow::HTTPMethod::PUT)
     ([&db](const crow::request &req) {
         auto data_json = crow::json::load(req.body);
         if (!data_json) {
@@ -98,7 +98,7 @@ int main(int argc, char* argv[]) {
         std::string contact_id = data_json["contact_id"].s();
         std::string name = data_json["name"].s();
         std::string server_address = data_json["server_address"].s();
-        if (!db.add_contact(contact_id, name, server_address)) {
+        if (!db.upsert_contact(contact_id, name, server_address)) {
             return crow::response(500, crow::json::wvalue{{"error", "Failed to add contact"}});
         }
         return crow::response(200, "Contact added.");
