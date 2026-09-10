@@ -14,6 +14,20 @@
 constexpr int DEFAULT_PORT = 18080;
 constexpr const char* DEFAULT_DB_PATH = "NoMiddle.db";
 
+std::string readFile(const std::string& basePath, const std::string& requestedPath) {
+    if (requestedPath.find("..") != std::string::npos) {
+        return "";
+    }
+    std::string fullPath = basePath + "/" + requestedPath;
+    std::ifstream file(fullPath, std::ios::in | std::ios::binary);
+    if (!file) {
+        return "";
+    }
+    std::ostringstream contents;
+    contents << file.rdbuf();
+    return contents.str();
+}
+
 int main(int argc, char* argv[]) {
     int port = DEFAULT_PORT;
     std::string db_path = DEFAULT_DB_PATH;
@@ -58,6 +72,17 @@ int main(int argc, char* argv[]) {
     CROW_ROUTE(app, "/")
     ([](){
         return crow::response(200, "ok");
+    });
+
+    CROW_ROUTE(app, "/<string>")
+    ([](const crow::request& req, std::string path){
+        if (path.empty()) path = "index.html";
+        std::string content = readFile("../web", path);
+        if (!content.empty()) {
+            crow::response res(content);
+            return res;
+        }
+        return crow::response(404);
     });
 
     CROW_ROUTE(app, "/api/add_contact").methods(crow::HTTPMethod::POST)
@@ -196,7 +221,14 @@ int main(int argc, char* argv[]) {
     ([&self_public_key](const crow::request &req) {
         crow::json::wvalue result;
         result["public_key"] = self_public_key;
-        return crow::response(200, result);
+        crow::response res;
+        res.add_header("Access-Control-Allow-Origin", "*");
+        res.add_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+        res.add_header("Access-Control-Allow-Headers", "Content-Type");
+        res.code = 200; 
+        res.body = result.dump();
+        res.set_header("Content-Type", "application/json");
+        return res; 
     });
 
     std::cout << "Server listening on http://0.0.0.0:" << port << "\n";
