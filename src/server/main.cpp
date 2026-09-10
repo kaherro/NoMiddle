@@ -85,7 +85,7 @@ int main(int argc, char* argv[]) {
         return crow::response(404);
     });
 
-    CROW_ROUTE(app, "/api/add_contact").methods(crow::HTTPMethod::PUT)
+    CROW_ROUTE(app, "/api/upsert_contact").methods(crow::HTTPMethod::PUT)
     ([&db](const crow::request &req) {
         auto data_json = crow::json::load(req.body);
         if (!data_json) {
