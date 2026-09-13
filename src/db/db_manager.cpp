@@ -48,10 +48,12 @@ void db_manager::init_schema() {
     std::cout << "[SQL] Schema ready.\n";
 }
 
-bool db_manager::add_contact(const std::string &contact_id, const std::string &name, const std::string &server_address) {
+bool db_manager::upsert_contact(const std::string &contact_id, const std::string &name, const std::string &server_address) {
     const char *sql_insert =
         "INSERT INTO contacts (contact_id, name, server_address) "
-        "VALUES (?, ?, ?);";
+        "VALUES (?, ?, ?) "
+        "ON CONFLICT (contact_id) "
+        "DO UPDATE SET name = EXCLUDED.name, server_address = EXCLUDED.server_address;"; 
 
     sqlite3_stmt* stmt = nullptr;
     int rc = sqlite3_prepare_v2(db_.get(), sql_insert, -1, &stmt, nullptr);

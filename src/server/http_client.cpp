@@ -6,7 +6,8 @@ std::optional<int64_t> send_message(const std::string& url, const std::string& j
         cpr::Url{url},
         cpr::Body{json_body},
         cpr::Header{{"Content-Type", "application/json"}},
-        cpr::Timeout{10000}
+        cpr::Timeout{10000},
+        cpr::VerifySsl{false}
     );
 
     if (r.error.code != cpr::ErrorCode::OK) {

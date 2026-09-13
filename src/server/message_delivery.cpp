@@ -47,9 +47,6 @@ std::optional<std::string> deliver_message(db_manager &db, const std::string &se
     }
 
     std::string server_address = db.get_contact_address(recipient_id);
-    // if(server_address.empty()) {
-    //     return std::nullopt;
-    // }
     cut_server_address(server_address); 
 
     crow::json::wvalue data_json;
@@ -59,7 +56,7 @@ std::optional<std::string> deliver_message(db_manager &db, const std::string &se
     data_json["ciphertext"]         = ciphertext;
     data_json["timestamp"]    = timestamp;
 
-    std::string url = "http://" + server_address + "/accept_message";
+    std::string url = "https://" + server_address + "/accept_message";
     auto result = send_message(url, data_json.dump());
 
     if (result.has_value() && *result == 200) {
@@ -84,7 +81,7 @@ bool retry_deliver_message(db_manager &db, const db_manager::message &msg) {
     data_json["ciphertext"] = msg.ciphertext;
     data_json["timestamp"] = msg.timestamp;
 
-    std::string url = "http://" + server_address + "/accept_message";
+    std::string url = "https://" + server_address + "/accept_message";
     auto result = send_message(url, data_json.dump());
 
     bool delivered = result.has_value() && *result == 200;
