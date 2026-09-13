@@ -40,7 +40,7 @@ body {
 #messenger-naming {
     font-weight: bold;
 }
-#public-key {
+#my-domain {
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -48,13 +48,13 @@ body {
     padding-top: 0px;
     border-bottom: 1px solid #2a2f3a;
 }
-#public-key-label {
+#my-domain-label {
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: #8b93a3;
 }
-#public-key-value {
+#my-domain-value {
     font-size: 12px;
     color: #e7e9ee;
     background: #232834;
@@ -64,10 +64,7 @@ body {
     white-space: nowrap;
     overflow: hidden;
 }
-#public-key-value:hover {
-    background: #2a2f3acb;
-}
-#public-key-copy {
+#my-domain-copy {
     background: transparent;
     font-weight: bold;
     border: 1px solid #2a2f3a;
@@ -77,9 +74,10 @@ body {
     border-radius: 6px;
     display: inline-flex;
     width: fit-content;
+    cursor: pointer;
 }
-#public-key-copy:hover {
-    background: #2a2f3acb;
+#my-domain-copy:hover {
+    background: #2a2f3a;
 }
 #contacts {
     display: flex;
@@ -156,6 +154,9 @@ body {
 }
 .contact:hover {
     background: #232834;
+}
+.contact.selected {
+    background: #2b3140;
 }
 .contact > div:first-of-type {
     flex: 1;
@@ -257,6 +258,16 @@ body {
 }
 #messages-list::-webkit-scrollbar-track {
     background: transparent;
+}
+.chat-placeholder {
+    margin: auto;
+    text-align: center;
+    font-size: 14px;
+    color: #7c8496;
+    background: rgba(79, 209, 174, 0.06);
+    padding: 6px 14px;
+    border-radius: 20px;
+    letter-spacing: 0.02em;
 }
 .message {
     max-width: 60%;
