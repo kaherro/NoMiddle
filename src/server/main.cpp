@@ -1,3 +1,4 @@
+#define CROW_ENABLE_SSL
 #include "../db/db_manager.h"
 #include "http_client.h"
 #include "message_delivery.h"
@@ -10,9 +11,13 @@
 #include <thread>
 #include <atomic>
 #include <optional>
+#include <mutex>
+#include <unordered_set>
 
 constexpr int DEFAULT_PORT = 18080;
 constexpr const char* DEFAULT_DB_PATH = "NoMiddle.db";
+constexpr const char* DEFAULT_CERT_PATH = "cert.pem";
+constexpr const char* DEFAULT_KEY_PATH  = "key.pem";
 
 std::string readFile(const std::string& basePath, const std::string& requestedPath) {
     if (requestedPath.find("..") != std::string::npos) {
@@ -26,6 +31,26 @@ std::string readFile(const std::string& basePath, const std::string& requestedPa
     std::ostringstream contents;
     contents << file.rdbuf();
     return contents.str();
+}
+
+bool has_suffix(const std::string &s, const std::string &suffix) {
+    return s.size() >= suffix.size() && s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+std::string key_path_for_db(const std::string &db_path, int port) {
+    size_t slash = db_path.find_last_of("/\\");
+    std::string dir = (slash == std::string::npos) ? "" : db_path.substr(0, slash);
+    return dir + (dir.empty() ? "" : "/") + "private_key" + std::to_string(port) + ".bin";
+}
+
+std::string content_type_for(const std::string &path) {
+    if (has_suffix(path, ".html")) return "text/html";
+    if (has_suffix(path, ".css"))  return "text/css";
+    if (has_suffix(path, ".js"))   return "text/javascript";
+    if (has_suffix(path, ".png"))  return "image/png";
+    if (has_suffix(path, ".svg"))  return "image/svg+xml";
+    if (has_suffix(path, ".ico"))  return "image/x-icon";
+    return "application/octet-stream";
 }
 
 int main(int argc, char* argv[]) {
@@ -46,7 +71,12 @@ int main(int argc, char* argv[]) {
         db_path = argv[2];
     }
 
-    auto keys = load_or_create_keypair("private_key" + std::to_string(port) + ".bin");
+    std::string cert_path = DEFAULT_CERT_PATH;
+    std::string key_path  = DEFAULT_KEY_PATH;
+    if (argc > 3) cert_path = argv[3];
+    if (argc > 4) key_path  = argv[4];
+
+    auto keys = load_or_create_keypair(key_path_for_db(db_path, port));
     if (!keys) {
         std::cerr << "Failed to load or generate keypair\n";
         return 3;
@@ -67,6 +97,22 @@ int main(int argc, char* argv[]) {
     std::atomic<bool> retry_worker_running{true};
     std::thread thread_retry_worker(start_retrying_worker, std::ref(db), std::ref(retry_worker_running));
 
+    std::mutex ws_mutex;
+    std::unordered_set<crow::websocket::connection*> ws_clients;
+
+    auto notify_new_message = [&ws_mutex, &ws_clients](const std::string &message_id, const std::string &other_party_id) {
+        crow::json::wvalue payload;
+        payload["type"]       = "new_message";
+        payload["message_id"] = message_id;
+        payload["contact_id"] = other_party_id; 
+        std::string data = payload.dump();
+
+        std::lock_guard<std::mutex> lock(ws_mutex);
+        for (auto* conn : ws_clients) {
+            conn->send_text(data);
+        }
+    };
+
     crow::SimpleApp app;
 
     CROW_ROUTE(app, "/")
@@ -77,13 +123,28 @@ int main(int argc, char* argv[]) {
     CROW_ROUTE(app, "/<string>")
     ([](const crow::request& req, std::string path){
         if (path.empty()) path = "index.html";
-        std::string content = readFile("../web", path);
+        std::string content = readFile("web", path);
         if (!content.empty()) {
             crow::response res(content);
+            res.set_header("Content-Type", content_type_for(path));
             return res;
         }
         return crow::response(404);
     });
+
+    CROW_ROUTE(app, "/ws/messages")
+    .websocket(&app)
+    .onopen([&ws_mutex, &ws_clients](crow::websocket::connection &conn) {
+        std::lock_guard<std::mutex> lock(ws_mutex);
+        ws_clients.insert(&conn);
+        std::cout << "[WS] Client connected, total: " << ws_clients.size() << "\n";
+    })
+    .onclose([&ws_mutex, &ws_clients](crow::websocket::connection &conn, const std::string &reason, unsigned short close_code) {
+        std::lock_guard<std::mutex> lock(ws_mutex);
+        ws_clients.erase(&conn);
+        std::cout << "[WS] Client disconnected: " << reason << "\n";
+    })
+    .onmessage([](crow::websocket::connection &conn, const std::string &data, bool is_binary) {});
 
     CROW_ROUTE(app, "/api/upsert_contact").methods(crow::HTTPMethod::PUT)
     ([&db](const crow::request &req) {
@@ -105,7 +166,7 @@ int main(int argc, char* argv[]) {
     });
 
     CROW_ROUTE(app, "/api/send_message").methods(crow::HTTPMethod::POST)
-    ([&db, &self_public_key, &keys](const crow::request &req) {
+    ([&db, &self_public_key, &keys, &notify_new_message](const crow::request &req) {
         auto data_json = crow::json::load(req.body);
         if (!data_json) {
             return crow::response(400, crow::json::wvalue{{"error", "Invalid JSON"}});
@@ -124,13 +185,14 @@ int main(int argc, char* argv[]) {
         if(!message_id.has_value()) {
             return crow::response(400, crow::json::wvalue{{"error", "Error while delivering message"}});
         }
+        notify_new_message(message_id.value(), recipient_id);
         crow::json::wvalue res;
         res["message_id"] = message_id.value();
         return crow::response(200, res);
     });
 
     CROW_ROUTE(app, "/accept_message").methods(crow::HTTPMethod::POST)
-    ([&db, &self_public_key, &keys](const crow::request &req) {
+    ([&db, &self_public_key, &keys, &notify_new_message](const crow::request &req) {
         auto data_json = crow::json::load(req.body);
         if(!data_json) {
             return crow::response(400, crow::json::wvalue{{"error", "Invalid JSON"}});
@@ -149,8 +211,9 @@ int main(int argc, char* argv[]) {
         if (!plaintext) {
             return crow::response(400, crow::json::wvalue{{"error", "Failed to decrypt message"}});
         }
+        std::string message_id = data_json["message_id"].s();
         db_manager::message msg{
-            data_json["message_id"].s(),
+            message_id,
             sender_id,
             recipient_id,
             plaintext.value(),
@@ -161,8 +224,10 @@ int main(int argc, char* argv[]) {
         if (!db.add_message(msg)) {
             return crow::response(500, crow::json::wvalue{{"error", "Failed to store message"}});
         }
+        notify_new_message(message_id, sender_id);
         return crow::response(200);
     });
+    
     CROW_ROUTE(app, "/api/contacts").methods(crow::HTTPMethod::GET)
     ([&db, &self_public_key](const crow::request &req) {
         auto contacts = db.get_contacts_with_latest_message(self_public_key);
@@ -231,8 +296,14 @@ int main(int argc, char* argv[]) {
         return res; 
     });
 
-    std::cout << "Server listening on http://0.0.0.0:" << port << "\n";
-    app.port(port).bindaddr("0.0.0.0").multithreaded().run();
+    if (cert_path.empty() || cert_path == "none") {
+        std::cout << "Server listening on http://0.0.0.0:" << port << "\n";
+        app.port(port).bindaddr("0.0.0.0").multithreaded().run();
+    } 
+    else {
+        std::cout << "Server listening on https://0.0.0.0:" << port << " (TLS: " << cert_path << " / " << key_path << ")\n";
+        app.port(port).bindaddr("0.0.0.0").multithreaded().ssl_file(cert_path, key_path).run();
+    }
 
     retry_worker_running = false;
     thread_retry_worker.join();
