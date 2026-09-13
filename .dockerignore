@@ -1,0 +1,12 @@
+.git
+build
+node_modules
+duckdns
+*.db
+*.db-wal
+*.db-shm
+*.log
+*.pem
+*.bin
+sql_schema.png
+web/favicon.svg
