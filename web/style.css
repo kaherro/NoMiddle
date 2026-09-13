@@ -142,6 +142,7 @@ body {
     color: #8b93a3;
 }
 .contact {
+    position: relative;
     padding: 8px 10px;
     display: flex;
     flex-direction: row;
@@ -156,7 +157,7 @@ body {
 .contact:hover {
     background: #232834;
 }
-.contact > div:first-child {
+.contact > div:first-of-type {
     flex: 1;
     min-width: 0;
 }
@@ -174,6 +175,13 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     width: 100%;
+}
+.latest-message-time {
+    position: absolute;
+    right: 10px;
+    bottom: 8px;
+    font-size: 12px;
+    color: #6b7385;
 }
 .settings-icon {
     position: relative;
@@ -205,8 +213,31 @@ body {
     font-size: 15px; 
     display: flex;
     flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
     padding: 10px; 
     border-bottom: 1px solid #2a2f3a;
+}
+.chat-settings-button {
+    position: relative;
+    top: 0;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    margin: 0;
+    border: none;
+    border-radius: 50%;
+    box-sizing: border-box;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.chat-settings-button:hover {
+    background: #343b48;
+}
+.chat-settings-button svg {
+    display: block;
 }
 #messages-list {
     flex: 1;
