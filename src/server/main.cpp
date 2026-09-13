@@ -3,6 +3,7 @@
 #include "http_client.h"
 #include "message_delivery.h"
 #include "retry_worker.h"
+#include "auth.h"
 #include "crypto/key_manager.h"
 #include "crypto/message_crypto.h"
 #include <crow.h>
@@ -113,6 +114,10 @@ int main(int argc, char* argv[]) {
         }
     };
 
+    auto is_authed = [&db](const crow::request &req) {
+        return authenticate(db, header_value(req, "X-Client-Id"), header_value(req, "X-Client-Secret"));
+    };
+
     crow::SimpleApp app;
 
     CROW_ROUTE(app, "/")
@@ -134,20 +139,43 @@ int main(int argc, char* argv[]) {
 
     CROW_ROUTE(app, "/ws/messages")
     .websocket(&app)
-    .onopen([&ws_mutex, &ws_clients](crow::websocket::connection &conn) {
-        std::lock_guard<std::mutex> lock(ws_mutex);
-        ws_clients.insert(&conn);
-        std::cout << "[WS] Client connected, total: " << ws_clients.size() << "\n";
+    .onopen([](crow::websocket::connection &conn) {
+        std::cout << "[WS] Connection opened, waiting for auth\n";
     })
-    .onclose([&ws_mutex, &ws_clients](crow::websocket::connection &conn, const std::string &reason, unsigned short close_code) {
+    .onclose([&ws_mutex, &ws_clients](crow::websocket::connection &conn, 
+        const std::string &reason, unsigned short close_code) {
         std::lock_guard<std::mutex> lock(ws_mutex);
         ws_clients.erase(&conn);
         std::cout << "[WS] Client disconnected: " << reason << "\n";
     })
-    .onmessage([](crow::websocket::connection &conn, const std::string &data, bool is_binary) {});
+    .onmessage([&db, &ws_mutex, &ws_clients](crow::websocket::connection &conn, 
+        const std::string &data, bool is_binary) {
+        if (is_binary) return;
+        auto parsed = crow::json::load(data);
+        if (!parsed || !parsed.has("type") || parsed["type"].t() != crow::json::type::String) return;
+        std::string type = parsed["type"].s();
+        if (type != "auth") return;
+        if (!parsed.has("client_id") || !parsed.has("secret") ||
+            parsed["client_id"].t() != crow::json::type::String ||
+            parsed["secret"].t() != crow::json::type::String) {
+            conn.close("unauthorized");
+            return;
+        }
+        if (!authenticate(db, parsed["client_id"].s(), parsed["secret"].s())) {
+            conn.close("unauthorized");
+            return;
+        }
+        std::lock_guard<std::mutex> lock(ws_mutex);
+        ws_clients.insert(&conn);
+        conn.send_text("{\"type\":\"auth_ok\"}");
+        std::cout << "[WS] Client authorized, total: " << ws_clients.size() << "\n";
+    });
 
     CROW_ROUTE(app, "/api/upsert_contact").methods(crow::HTTPMethod::PUT)
-    ([&db](const crow::request &req) {
+    ([&db, &is_authed](const crow::request &req) {
+        if (!is_authed(req)) {
+            return crow::response(401, crow::json::wvalue{{"error", "Unauthorized"}});
+        }
         auto data_json = crow::json::load(req.body);
         if (!data_json) {
             return crow::response(400, crow::json::wvalue{{"error", "Invalid JSON"}});
@@ -166,7 +194,10 @@ int main(int argc, char* argv[]) {
     });
 
     CROW_ROUTE(app, "/api/send_message").methods(crow::HTTPMethod::POST)
-    ([&db, &self_public_key, &keys, &notify_new_message](const crow::request &req) {
+    ([&db, &self_public_key, &keys, &notify_new_message, &is_authed](const crow::request &req) {
+        if (!is_authed(req)) {
+            return crow::response(401, crow::json::wvalue{{"error", "Unauthorized"}});
+        }
         auto data_json = crow::json::load(req.body);
         if (!data_json) {
             return crow::response(400, crow::json::wvalue{{"error", "Invalid JSON"}});
@@ -229,7 +260,10 @@ int main(int argc, char* argv[]) {
     });
     
     CROW_ROUTE(app, "/api/contacts").methods(crow::HTTPMethod::GET)
-    ([&db, &self_public_key](const crow::request &req) {
+    ([&db, &self_public_key, &is_authed](const crow::request &req) {
+        if (!is_authed(req)) {
+            return crow::response(401, crow::json::wvalue{{"error", "Unauthorized"}});
+        }
         auto contacts = db.get_contacts_with_latest_message(self_public_key);
         crow::json::wvalue result;
         std::vector<crow::json::wvalue> res;
@@ -259,7 +293,10 @@ int main(int argc, char* argv[]) {
     });
 
     CROW_ROUTE(app, "/api/messages").methods(crow::HTTPMethod::GET)
-    ([&db, &self_public_key](const crow::request &req) {
+    ([&db, &self_public_key, &is_authed](const crow::request &req) {
+        if (!is_authed(req)) {
+            return crow::response(401, crow::json::wvalue{{"error", "Unauthorized"}});
+        }
         const char* contact_cstr = req.url_params.get("contact_id");
         if (!contact_cstr) {
             return crow::response(400, crow::json::wvalue{{"error", "Missing contact_id parameter"}});
@@ -294,6 +331,25 @@ int main(int argc, char* argv[]) {
         res.body = result.dump();
         res.set_header("Content-Type", "application/json");
         return res; 
+    });
+
+    CROW_ROUTE(app, "/api/auth/register").methods(crow::HTTPMethod::POST)
+    ([&db](const crow::request &req) {
+        if (db.has_clients()) {
+            return crow::response(403, crow::json::wvalue{{"error", "Node is locked"}});
+        }
+        std::string client_id = random_b64url(16);
+        std::string secret = random_b64url(32);
+        std::string salt = random_b64url(16);
+        std::string secret_hash = hash_secret(secret, salt);
+        int64_t now = static_cast<int64_t>(std::time(nullptr));
+        if (!db.create_client(client_id, salt, secret_hash, now)) {
+            return crow::response(500, crow::json::wvalue{{"error", "Failed to register client"}});
+        }
+        crow::json::wvalue res;
+        res["client_id"] = client_id;
+        res["secret"] = secret;
+        return crow::response(200, res);
     });
 
     if (cert_path.empty() || cert_path == "none") {

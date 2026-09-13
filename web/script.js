@@ -1,6 +1,7 @@
 (() => {
     const baseUrl = window.location.origin;
     const api = {
+        register: `${baseUrl}/api/auth/register`,
         publicKey: `${baseUrl}/api/public_key`,
         contacts: `${baseUrl}/api/contacts`,
         messages: `${baseUrl}/api/messages`,
@@ -21,10 +22,70 @@
         }
     };
 
+    const AUTH_ID_KEY = 'nmd_client_id';
+    const AUTH_SECRET_KEY = 'nmd_client_secret';
+
+    let authId = localStorage.getItem(AUTH_ID_KEY);
+    let authSecret = localStorage.getItem(AUTH_SECRET_KEY);
+
+    const lockScreenEl = document.getElementById('lock-screen');
+    const lockMessageEl = document.getElementById('lock-message');
+    const lockRefreshBtn = document.getElementById('lock-refresh');
+
+    function showLockScreen(message) {
+        lockMessageEl.textContent = message;
+        lockScreenEl.style.display = 'flex';
+    }
+
+    lockRefreshBtn.addEventListener('click', () => { location.reload(); });
+
+    function apiFetch(url, options) {
+        const opts = options || {};
+        opts.headers = Object.assign({}, opts.headers);
+        if (authId && authSecret) {
+            opts.headers['X-Client-Id'] = authId;
+            opts.headers['X-Client-Secret'] = authSecret;
+        }
+        return fetch(url, opts).then(resp => {
+            if (resp.status === 401) {
+                localStorage.removeItem(AUTH_ID_KEY);
+                localStorage.removeItem(AUTH_SECRET_KEY);
+                authId = null;
+                authSecret = null;
+                showLockScreen('Your session was revoked. This device can no longer access the node.');
+            }
+            return resp;
+        });
+    }
+
+    async function registerClient() {
+        try {
+            const resp = await fetch(api.register, { method: 'POST' });
+            if (resp.status === 403) {
+                showLockScreen('This node is locked. Ask the owner to register your device.');
+                return false;
+            }
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = await resp.json();
+            authId = data.client_id;
+            authSecret = data.secret;
+            localStorage.setItem(AUTH_ID_KEY, authId);
+            localStorage.setItem(AUTH_SECRET_KEY, authSecret);
+            return true;
+        } 
+        catch (err) {
+            console.error('Failed to register client:', err);
+            showLockScreen('Failed to connect to the server.');
+            return false;
+        }
+    }
+
     let selfPublicKey = null;
     let selectedContactId = null;
     let lastContacts = [];
     let pendingSelfMessageId = null;
+
+    const messengerWindowEl = document.getElementById('messenger-window');
 
     const myDomainValueEl = document.getElementById('my-domain-value');
     const myDomainCopyBtn = document.getElementById('my-domain-copy');
@@ -85,7 +146,7 @@
 
     async function fetchContacts() {
         try {
-            const resp = await fetch(api.contacts);
+            const resp = await apiFetch(api.contacts);
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             const data = await resp.json();
             return data.contacts || [];
@@ -161,7 +222,7 @@
     async function fetchMessages() {
         if (!selectedContactId) return [];
         try {
-            const resp = await fetch(`${api.messages}?contact_id=${encodeURIComponent(selectedContactId)}`);
+            const resp = await apiFetch(`${api.messages}?contact_id=${encodeURIComponent(selectedContactId)}`);
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             const data = await resp.json();
             return data.messages || [];
@@ -215,7 +276,7 @@
         }
         if (!text.trim()) return;
         try {
-            const resp = await fetch(api.sendMessage, {
+            const resp = await apiFetch(api.sendMessage, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -281,7 +342,7 @@
             const data = await resp.json();
             const remotePubKey = data.public_key;
             if (!remotePubKey) throw new Error('No public key in response');
-            const addResp = await fetch(api.upsertContact, {
+            const addResp = await apiFetch(api.upsertContact, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -341,7 +402,7 @@
             return;
         }
         try {
-            const updateResp = await fetch(api.upsertContact, {
+            const updateResp = await apiFetch(api.upsertContact, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -378,9 +439,15 @@
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws/messages`;
         ws = new WebSocket(wsUrl);
-        ws.onopen = () => { };
+        ws.onopen = () => {
+            if (authId && authSecret) {
+                ws.send(JSON.stringify({ type: 'auth', client_id: authId, secret: authSecret }));
+            }
+        };
         ws.onclose = () => {
-            setTimeout(initWebSocket, 3000);
+            if (authId && authSecret) {
+                setTimeout(initWebSocket, 3000);
+            }
         };
         ws.onerror = e => {
             console.error('WebSocket error:', e);
@@ -407,6 +474,15 @@
     }
 
     async function init() {
+        if (authId && authSecret) {
+            const probe = await apiFetch(api.contacts);
+            if (!probe.ok) return;
+        } 
+        else {
+            const registered = await registerClient();
+            if (!registered) return;
+        }
+        messengerWindowEl.style.display = 'flex';
         await fetchSelfPublicKey();
         const contacts = await fetchContacts();
         renderContacts(contacts);

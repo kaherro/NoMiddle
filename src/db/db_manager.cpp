@@ -35,6 +35,22 @@ void db_manager::init_schema() {
             accepted        INTEGER NOT NULL DEFAULT 0,
             timestamp       INTEGER NOT NULL DEFAULT (unixepoch())
         );
+
+        CREATE TABLE IF NOT EXISTS clients (
+            client_id   TEXT PRIMARY KEY,
+            salt        TEXT NOT NULL,
+            secret_hash TEXT NOT NULL,
+            created_at  INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS auth_requests (
+            request_id       TEXT PRIMARY KEY,
+            device_name      TEXT NOT NULL,
+            created_at       INTEGER NOT NULL,
+            expires_at       INTEGER NOT NULL,
+            approved_client_id TEXT,
+            approved_secret  TEXT
+        );
     )";
 
     char *errMsg = nullptr;
@@ -252,6 +268,91 @@ std::vector<db_manager::message> db_manager::get_messages_between(const std::str
         msg.accepted = sqlite3_column_int(stmt, 5);
         msg.timestamp = sqlite3_column_int64(stmt, 6);
         result.push_back(std::move(msg));
+    }
+    sqlite3_finalize(stmt);
+    return result;
+}
+
+bool db_manager::has_clients() {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.get(), "SELECT COUNT(*) FROM clients;", -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare clients count: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return false;
+    }
+    bool empty = true;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        empty = sqlite3_column_int(stmt, 0) == 0;
+    }
+    sqlite3_finalize(stmt);
+    return !empty;
+}
+
+bool db_manager::create_client(const std::string &client_id, const std::string &salt,
+                            const std::string &secret_hash, int64_t created_at) {
+    const char *sql = "INSERT INTO clients (client_id, salt, secret_hash, created_at) VALUES (?, ?, ?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare client insert: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, client_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, salt.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, secret_hash.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 4, created_at);
+    bool ok = (sqlite3_step(stmt) == SQLITE_DONE);
+    sqlite3_finalize(stmt);
+    return ok;
+}
+
+bool db_manager::get_client(const std::string &client_id, client &out) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.get(),
+        "SELECT client_id, salt, secret_hash, created_at FROM clients WHERE client_id = ?;",
+        -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare client select: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, client_id.c_str(), -1, SQLITE_TRANSIENT);
+    bool found = false;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        out.client_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        out.salt = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        out.secret_hash = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        out.created_at = sqlite3_column_int64(stmt, 3);
+        found = true;
+    }
+    sqlite3_finalize(stmt);
+    return found;
+}
+
+bool db_manager::delete_client(const std::string &client_id) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.get(), "DELETE FROM clients WHERE client_id = ?;", -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare client delete: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, client_id.c_str(), -1, SQLITE_TRANSIENT);
+    bool ok = (sqlite3_step(stmt) == SQLITE_DONE);
+    sqlite3_finalize(stmt);
+    return ok;
+}
+
+std::vector<db_manager::client> db_manager::clients_list() {
+    std::vector<client> result;
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.get(),
+        "SELECT client_id, salt, secret_hash, created_at FROM clients ORDER BY created_at ASC;",
+        -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare clients list: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return result;
+    }
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        client c;
+        c.client_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        c.salt = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        c.secret_hash = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        c.created_at = sqlite3_column_int64(stmt, 3);
+        result.push_back(std::move(c));
     }
     sqlite3_finalize(stmt);
     return result;
