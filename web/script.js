@@ -1,7 +1,11 @@
 (() => {
     const baseUrl = window.location.origin;
     const api = {
-        register: `${baseUrl}/api/auth/register`,
+        authRequest: `${baseUrl}/api/auth/request`,
+        authApprove: `${baseUrl}/api/auth/approve`,
+        authRequestStatus: (id) => `${baseUrl}/api/auth/request?request_id=${encodeURIComponent(id)}`,
+        clients: `${baseUrl}/api/clients`,
+        client: (id) => `${baseUrl}/api/clients/${encodeURIComponent(id)}`,
         publicKey: `${baseUrl}/api/public_key`,
         contacts: `${baseUrl}/api/contacts`,
         messages: `${baseUrl}/api/messages`,
@@ -30,12 +34,127 @@
 
     const lockScreenEl = document.getElementById('lock-screen');
     const lockMessageEl = document.getElementById('lock-message');
+    const lockRegisterEl = document.getElementById('lock-register');
+    const lockDeviceNameInput = document.getElementById('lock-device-name');
+    const lockRequestBtn = document.getElementById('lock-request-btn');
+    const lockWaitingEl = document.getElementById('lock-waiting');
     const lockRefreshBtn = document.getElementById('lock-refresh');
 
-    function showLockScreen(message) {
-        lockMessageEl.textContent = message;
+    let pollTimer = null;
+    function stopPolling() {
+        if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
+    }
+
+    function showLockScreen(message, showForm) {
+        stopPolling();
+        lockMessageEl.textContent = message || '';
+        lockRegisterEl.style.display = showForm ? 'flex' : 'none';
+        lockDeviceNameInput.style.display = showForm ? '' : 'none';
+        lockWaitingEl.style.display = 'none';
         lockScreenEl.style.display = 'flex';
     }
+
+    function saveCreds(clientId, secret) {
+        authId = clientId;
+        authSecret = secret;
+        localStorage.setItem(AUTH_ID_KEY, clientId);
+        localStorage.setItem(AUTH_SECRET_KEY, secret);
+    }
+
+    function defaultDeviceName() {
+        const ua = navigator.userAgent;
+        let os = 'desktop';
+        if (/Windows/.test(ua)) os = 'Windows';
+        else if (/Mac OS X/.test(ua)) os = 'macOS';
+        else if (/Android/.test(ua)) os = 'Android';
+        else if (/iPhone|iPad|iPod/.test(ua)) os = 'iOS';
+        else if (/Linux/.test(ua)) os = 'Linux';
+        const browsers = [['Edge', /Edg\//], ['Chrome', /Chrome\//], ['Firefox', /Firefox\//], ['Safari', /Safari\//]];
+        const b = browsers.find(([, re]) => re.test(ua));
+        return b ? `${b[0]} on ${os}` : `Browser on ${os}`;
+    }
+
+    function startPolling(requestId, deviceName) {
+        lockWaitingEl.style.display = 'block';
+        lockWaitingEl.textContent = `Waiting for the owner to approve "${deviceName}"...`;
+        pollTimer = setInterval(async () => {
+            try {
+                const resp = await fetch(api.authRequestStatus(requestId));
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                if (data.status === 'approved') {
+                    stopPolling();
+                    saveCreds(data.client_id, data.secret);
+                    location.reload();
+                } 
+                else if (data.status === 'expired' || data.status === 'unknown') {
+                    stopPolling();
+                    showLockScreen('The request expired or was cancelled. Request access again.', true);
+                }
+            } 
+            catch (e) {
+                console.warn('Polling auth request failed:', e);
+            }
+        }, 2000);
+    }
+
+    async function requestAccess(name) {
+        const resp = await fetch(api.authRequest, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name })
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        if (data.auto) {
+            saveCreds(data.client_id, data.secret);
+            return { auto: true };
+        }
+        return { auto: false, request_id: data.request_id };
+    }
+
+    async function startLockFlow() {
+        const defaultName = defaultDeviceName();
+        let res;
+        try {
+            res = await requestAccess(defaultName);
+        } 
+        catch (err) {
+            console.error('Failed to request access:', err);
+            showLockScreen('Failed to connect to the server.', false);
+            return false;
+        }
+        if (res.auto) return true;
+        lockDeviceNameInput.value = defaultName;
+        showLockScreen('Enter a device name to request access.', true);
+        startPolling(res.request_id, defaultName);
+        return false;
+    }
+
+    lockRequestBtn.addEventListener('click', async () => {
+        lockRequestBtn.disabled = true;
+        try {
+            const name = lockDeviceNameInput.value.trim() || defaultDeviceName();
+            stopPolling();
+            const res = await requestAccess(name);
+            if (res.auto) {
+                location.reload();
+            } 
+            else {
+                startPolling(res.request_id, name);
+            }
+        } 
+        catch (err) {
+            console.error('Failed to request access:', err);
+            showLockScreen('Failed to connect to the server.', false);
+        } 
+        finally {
+            lockRequestBtn.disabled = false;
+        }
+    });
 
     lockRefreshBtn.addEventListener('click', () => { location.reload(); });
 
@@ -58,28 +177,6 @@
         });
     }
 
-    async function registerClient() {
-        try {
-            const resp = await fetch(api.register, { method: 'POST' });
-            if (resp.status === 403) {
-                showLockScreen('This node is locked. Ask the owner to register your device.');
-                return false;
-            }
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-            const data = await resp.json();
-            authId = data.client_id;
-            authSecret = data.secret;
-            localStorage.setItem(AUTH_ID_KEY, authId);
-            localStorage.setItem(AUTH_SECRET_KEY, authSecret);
-            return true;
-        } 
-        catch (err) {
-            console.error('Failed to register client:', err);
-            showLockScreen('Failed to connect to the server.');
-            return false;
-        }
-    }
-
     let selfPublicKey = null;
     let selectedContactId = null;
     let lastContacts = [];
@@ -98,18 +195,139 @@
     const messageInputEl = document.getElementById('message-text');
     const sendButtonEl = document.getElementById('send-button');
     const addContactBtnEl = document.getElementById('add-contact-button');
-    const addContactOverlayEl = document.querySelector('.modal-overlay');
+    const addContactOverlayEl = document.getElementById('add-contact-overlay');
     const addContactWindowEl = document.getElementById('add-contact-window');
     const addContactNameInput = document.getElementById('add-contact-input-name');
     const addContactIpInput = document.getElementById('add-contact-input-ip');
     const addContactConfirmBtn = document.getElementById('add-contact-confirm');
     const addContactCancelBtn = document.getElementById('add-contact-cancel');
-    const settingsOverlayEl = document.querySelectorAll('.modal-overlay')[1];
+    const settingsOverlayEl = document.getElementById('settings-overlay');
     const settingsWindowEl = document.getElementById('settings-window');
     const settingsNameInput = document.getElementById('settings-input-name');
     const settingsIpInput = document.getElementById('settings-input-ip');
     const settingsConfirmBtn = document.getElementById('settings-confirm');
     const settingsCancelBtn = document.getElementById('settings-cancel');
+
+    const devicesButtonEl = document.getElementById('devices-button');
+    const approvalOverlayEl = document.getElementById('approval-overlay');
+    const approvalWindowEl = document.getElementById('approval-window');
+    const approvalDeviceNameEl = document.getElementById('approval-device-name');
+    const approvalApproveBtn = document.getElementById('approval-approve-btn');
+    const approvalRejectBtn = document.getElementById('approval-reject-btn');
+    const devicesOverlayEl = document.getElementById('devices-overlay');
+    const devicesWindowEl = document.getElementById('devices-window');
+    const devicesListEl = document.getElementById('devices-list');
+    const devicesCloseBtn = document.getElementById('devices-close');
+
+    function openApprovalDialog(requestId, deviceName) {
+        approvalDeviceNameEl.textContent = `Device "${deviceName}" wants to connect to this node.`;
+        approvalWindowEl.dataset.requestId = requestId;
+        approvalOverlayEl.style.display = 'flex';
+        approvalWindowEl.style.display = 'block';
+    }
+
+    function closeApprovalDialog() {
+        approvalOverlayEl.style.display = 'none';
+        approvalWindowEl.style.display = 'none';
+        delete approvalWindowEl.dataset.requestId;
+    }
+
+    approvalOverlayEl.addEventListener('click', e => {
+        if (e.target === approvalOverlayEl) closeApprovalDialog();
+    });
+
+    async function submitApproval(allow) {
+        const requestId = approvalWindowEl.dataset.requestId;
+        if (!requestId) {
+            closeApprovalDialog();
+            return;
+        }
+        approvalApproveBtn.disabled = true;
+        approvalRejectBtn.disabled = true;
+        try {
+            const resp = await apiFetch(api.authApprove, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ request_id: requestId, allow })
+            });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            closeApprovalDialog();
+        } 
+        catch (err) {
+            console.error('Failed to submit approval:', err);
+            alert(`Failed to submit approval: ${err.message}`);
+        } 
+        finally {
+            approvalApproveBtn.disabled = false;
+            approvalRejectBtn.disabled = false;
+        }
+    }
+
+    approvalApproveBtn.addEventListener('click', () => submitApproval(true));
+    approvalRejectBtn.addEventListener('click', () => submitApproval(false));
+
+    function closeDevices() {
+        devicesOverlayEl.style.display = 'none';
+        devicesWindowEl.style.display = 'none';
+    }
+
+    devicesCloseBtn.addEventListener('click', closeDevices);
+    devicesOverlayEl.addEventListener('click', e => {
+        if (e.target === devicesOverlayEl) closeDevices();
+    });
+
+    function renderDevices(clients) {
+        devicesListEl.innerHTML = '';
+        (clients || []).forEach(c => {
+            const row = el('div', 'device-row');
+            const infoBlock = el('div', 'device-info-block');
+            infoBlock.appendChild(el('div', 'device-info', c.device_name || c.client_id));
+            if (c.device_name) {
+                infoBlock.appendChild(el('div', 'device-added', c.client_id));
+            }
+            infoBlock.appendChild(el('div', 'device-added', `added ${formatClockTime(c.created_at)}`));
+            row.appendChild(infoBlock);
+            if (c.client_id === authId) {
+                row.appendChild(el('div', 'device-current', 'this device'));
+            } 
+            else {
+                const revokeBtn = el('button', 'device-revoke', 'Revoke');
+                revokeBtn.addEventListener('click', () => revokeDevice(c.client_id));
+                row.appendChild(revokeBtn);
+            }
+            devicesListEl.appendChild(row);
+        });
+    }
+
+    async function openDevices() {
+        devicesListEl.innerHTML = '<div class="device-info" style="color:#8b93a3;">Loading...</div>';
+        devicesOverlayEl.style.display = 'flex';
+        devicesWindowEl.style.display = 'block';
+        try {
+            const resp = await apiFetch(api.clients);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = await resp.json();
+            renderDevices(data.clients || []);
+        } 
+        catch (err) {
+            console.error('Failed to load devices:', err);
+            devicesListEl.innerHTML = '<div class="device-info" style="color:#e7e9ee;">Failed to load devices.</div>';
+        }
+    }
+
+    devicesButtonEl.addEventListener('click', openDevices);
+
+    async function revokeDevice(clientId) {
+        try {
+            const resp = await apiFetch(api.client(clientId), { method: 'DELETE' });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            openDevices();
+        } 
+        catch (err) {
+            console.error('Failed to revoke device:', err);
+            alert('Failed to revoke device');
+        }
+    }
 
     function el(tag, className, text) {
         const e = document.createElement(tag);
@@ -465,6 +683,9 @@
                         }
                     }
                     refreshContacts();
+                } 
+                else if (data.type === 'auth_request') {
+                    openApprovalDialog(data.request_id, data.device_name || 'New device');
                 }
             } 
             catch (e) {
@@ -476,13 +697,19 @@
     async function init() {
         if (authId && authSecret) {
             const probe = await apiFetch(api.contacts);
-            if (!probe.ok) return;
+            if (!probe.ok) {
+                if (probe.status !== 401) {
+                    showLockScreen('Failed to connect to the server.', false);
+                }
+                return;
+            }
         } 
         else {
-            const registered = await registerClient();
-            if (!registered) return;
+            const granted = await startLockFlow();
+            if (!granted) return;
         }
         messengerWindowEl.style.display = 'flex';
+        lockScreenEl.style.display = 'none';
         await fetchSelfPublicKey();
         const contacts = await fetchContacts();
         renderContacts(contacts);

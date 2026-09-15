@@ -41,17 +41,36 @@ public:
 
     struct client {
         std::string client_id;
+        std::string device_name;
         std::string salt;
         std::string secret_hash;
         int64_t created_at;
     };
 
     bool has_clients();
-    bool create_client(const std::string &client_id, const std::string &salt,
+    bool create_client(const std::string &client_id, const std::string &device_name,
+                    const std::string &salt,
                     const std::string &secret_hash, int64_t created_at);
     bool get_client(const std::string &client_id, client &out);
     bool delete_client(const std::string &client_id);
     std::vector<client> clients_list();
+
+    struct auth_request {
+        std::string request_id;
+        std::string device_name;
+        int64_t created_at;
+        int64_t expires_at;
+        std::string approved_client_id;
+        std::string approved_secret;
+    };
+
+    bool add_auth_request(const std::string &request_id, const std::string &device_name,
+                        int64_t created_at, int64_t expires_at);
+    bool get_auth_request(const std::string &request_id, auth_request &out);
+    bool delete_auth_request(const std::string &request_id);
+    bool approve_auth_request(const std::string &request_id,
+                            const std::string &approved_client_id,
+                            const std::string &approved_secret);
 
 private:
     struct sqlite3_deleter {

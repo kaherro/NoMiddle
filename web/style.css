@@ -40,6 +40,20 @@ body {
 #messenger-naming {
     font-weight: bold;
 }
+#devices-button {
+    margin-left: auto;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+#devices-button:hover {
+    background: #2a2f3a;
+}
 #my-domain {
     display: flex;
     flex-direction: column;
@@ -337,7 +351,7 @@ body {
     z-index: 1000; 
     display: none;
 }
-#add-contact-window, #settings-window {
+#add-contact-window, #settings-window, #approval-window, #devices-window {
     position: fixed;
     top: 50%;
     left: 50%;
@@ -349,10 +363,98 @@ body {
     width: 320px;
     display: none;
 }
-#add-contact-header, #settings-header {
+#add-contact-header, #settings-header, #approval-header, #devices-header {
     font-size: 15px;
     font-weight: bold;
     margin-bottom: 10px;
+}
+#approval-device-name {
+    color: #e7e9ee;
+    font-size: 14px;
+    margin-bottom: 14px;
+}
+#devices-list {
+    max-height: 280px;
+    overflow-y: auto;
+    margin-bottom: 12px;
+}
+.device-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid #2a2f3a;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    background: #232834;
+}
+.device-info-block {
+    min-width: 0;
+}
+.device-info {
+    font-size: 13px;
+    color: #e7e9ee;
+    word-break: break-all;
+}
+.device-added {
+    font-size: 12px;
+    color: #8b93a3;
+    margin-top: 2px;
+}
+.device-current {
+    font-size: 12px;
+    color: #4fd1ae;
+    white-space: nowrap;
+}
+.device-revoke {
+    padding: 5px 10px;
+    border: 1px solid #2a2f3a;
+    border-radius: 6px;
+    background-color: #3a3740;
+    color: #e7e9ee;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.device-revoke:hover {
+    background-color: #5a3a3a;
+}
+#lock-register {
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+#lock-device-name {
+    flex: 1;
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid #2a2f3a;
+    border-radius: 6px;
+    background-color: #232834;
+    color: #e7e9ee;
+    font-size: 14px;
+    outline: none;
+}
+#lock-request-btn {
+    padding: 8px 12px;
+    border: 1px solid #2a2f3a;
+    border-radius: 6px;
+    background-color: #5c7a63;
+    color: #e7e9ee;
+    font-size: 14px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+#lock-request-btn:hover {
+    background-color: #4e6b55;
+}
+#lock-waiting {
+    color: #8b93a3;
+    font-size: 13px;
+    margin-bottom: 12px;
 }
 .contact-input {
     width: 100%;
@@ -366,7 +468,8 @@ body {
     margin-bottom: 10px;
     outline: none;
 }
-#add-contact-confirm, #add-contact-cancel, #settings-confirm, #settings-cancel {
+#add-contact-confirm, #add-contact-cancel, #settings-confirm, #settings-cancel,
+#approval-approve-btn, #approval-reject-btn, #devices-close {
     padding: 8px 12px;
     border: 1px solid #2a2f3a;
     border-radius: 6px;
@@ -376,7 +479,8 @@ body {
     cursor: pointer;
     margin-right: 8px;
 }
-#add-contact-confirm:hover, #add-contact-cancel:hover, #settings-confirm:hover, #settings-cancel:hover {
+#add-contact-confirm:hover, #add-contact-cancel:hover, #settings-confirm:hover, #settings-cancel:hover,
+#approval-approve-btn:hover, #approval-reject-btn:hover, #devices-close:hover {
     background-color: #4e6b55;
 }
 #lock-screen {
