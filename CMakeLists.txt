@@ -52,6 +52,7 @@ FetchContent_MakeAvailable(Crow)
 add_executable(server
     src/server/main.cpp
     src/db/db_manager.cpp
+    src/server/auth.cpp
     src/server/http_client.cpp
     src/server/message_delivery.cpp
     src/server/retry_worker.cpp
