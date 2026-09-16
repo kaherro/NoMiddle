@@ -16,6 +16,10 @@ void start_retrying_worker(db_manager &db, std::atomic<bool> &running) {
         if(pending_edits.empty()) {
             std::cout << "[RETRY_WORKER] No pending edits left\n";
         }
+        std::vector<db_manager::message> pending_deletes = db.get_pending_deletes();
+        if(pending_deletes.empty()) {
+            std::cout << "[RETRY_WORKER] No pending deletes left\n";
+        }
         int64_t current_time = static_cast<int64_t>(std::time(nullptr));
         for(auto msg : pending_messages) {
             if(retry_deliver_message(db, msg)) {
@@ -39,6 +43,18 @@ void start_retrying_worker(db_manager &db, std::atomic<bool> &running) {
                     std::cout << "[RETRY_WORKER] Edit of message " << msg.message_id << " now is nomore in retrying_worker\n"; 
                 }
                 std::cout << "[RETRY_WORKER] Edit of message " << msg.message_id << " for " << msg.recipient_id << " is still pending\n"; 
+            }
+        }
+        for(auto msg : pending_deletes) {
+            if(retry_message_delete(db, msg)) {
+                std::cout << "[RETRY_WORKER] Delete of message " << msg.message_id << " successfully delivered\n"; 
+            }
+            else {
+                if(msg.deleted_at != 0 && current_time - msg.deleted_at > 86400) {
+                    db.mark_delete_failed(msg.message_id); 
+                    std::cout << "[RETRY_WORKER] Delete of message " << msg.message_id << " now is nomore in retrying_worker\n"; 
+                }
+                std::cout << "[RETRY_WORKER] Delete of message " << msg.message_id << " for " << msg.recipient_id << " is still pending\n"; 
             }
         }
         for (int i = 0; i < 30 && running; ++i) {

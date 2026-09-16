@@ -332,6 +332,7 @@ int main(int argc, char* argv[]) {
             return crow::response(403, crow::json::wvalue{{"error", "Cannot delete message sent by someone else"}});
         }
         db.mark_deleted(message_id);
+        db.mark_delete_pending(message_id);
         deliver_message_delete(db, message_id, self_public_key, msg.recipient_id);
         notify_delete_message(message_id, msg.recipient_id);
         crow::json::wvalue res;
@@ -367,7 +368,11 @@ int main(int argc, char* argv[]) {
             plaintext.value(),
             ciphertext,
             true,
-            timestamp
+            timestamp,
+            0,
+            0,
+            1,
+            0
         };
         if (!db.add_message(msg)) {
             return crow::response(500, crow::json::wvalue{{"error", "Failed to store message"}});

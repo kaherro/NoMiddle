@@ -35,7 +35,9 @@ void db_manager::init_schema() {
             accepted        INTEGER NOT NULL DEFAULT 0,
             timestamp       INTEGER NOT NULL DEFAULT (unixepoch()),
             edited_at       INTEGER NOT NULL DEFAULT 0,
-            edit_accepted   INTEGER NOT NULL DEFAULT 0
+            edit_accepted   INTEGER NOT NULL DEFAULT 0,
+            delete_accepted INTEGER NOT NULL DEFAULT 1,
+            deleted_at      INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS clients (
@@ -64,6 +66,36 @@ void db_manager::init_schema() {
         sqlite3_free(errMsg);
         throw std::runtime_error("[SQL] Error creating schema: " + error);
     }
+
+    auto add_column_if_missing = [this](const char *table, const char *column_def) {
+        std::string column_name = column_def;
+        column_name = column_name.substr(0, column_name.find(' '));
+        std::string pragma = "PRAGMA table_info(" + std::string(table) + ");";
+        sqlite3_stmt* stmt = nullptr;
+        bool found = false;
+        if (sqlite3_prepare_v2(db_.get(), pragma.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+            while (sqlite3_step(stmt) == SQLITE_ROW) {
+                const unsigned char* name = sqlite3_column_text(stmt, 1);
+                if (name && std::string(reinterpret_cast<const char*>(name)) == column_name) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        sqlite3_finalize(stmt);
+        if (found) return;
+        std::string alter = "ALTER TABLE " + std::string(table) + " ADD COLUMN " + column_def + ";";
+        char *alter_err = nullptr;
+        if (sqlite3_exec(db_.get(), alter.c_str(), nullptr, nullptr, &alter_err) != SQLITE_OK) {
+            std::string error = alter_err ? alter_err : "unknown error";
+            sqlite3_free(alter_err);
+            std::cerr << "[SQL] Migration failed: " << error << std::endl;
+        }
+    };
+
+    add_column_if_missing("messages", "delete_accepted INTEGER NOT NULL DEFAULT 1");
+    add_column_if_missing("messages", "deleted_at INTEGER NOT NULL DEFAULT 0");
+
     std::cout << "[SQL] Schema ready.\n";
 }
 
@@ -167,6 +199,48 @@ void db_manager::mark_deleted(const std::string &message_id) {
     sqlite3_finalize(stmt);
 }
 
+void db_manager::mark_delete_pending(const std::string &message_id) {
+    const char *sql = "UPDATE messages SET delete_accepted = 0, deleted_at = unixepoch() WHERE message_id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare delete pending update: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return;
+    }
+    sqlite3_bind_text(stmt, 1, message_id.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        std::cerr << "[SQL] Update failed: " << sqlite3_errmsg(db_.get()) << std::endl;
+    }
+    sqlite3_finalize(stmt);
+}
+
+void db_manager::mark_delete_accepted(const std::string &message_id) {
+    const char *sql = "UPDATE messages SET delete_accepted = 1 WHERE message_id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare delete accept update: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return;
+    }
+    sqlite3_bind_text(stmt, 1, message_id.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        std::cerr << "[SQL] Update failed: " << sqlite3_errmsg(db_.get()) << std::endl;
+    }
+    sqlite3_finalize(stmt);
+}
+
+void db_manager::mark_delete_failed(const std::string &message_id) {
+    const char *sql = "UPDATE messages SET delete_accepted = 2 WHERE message_id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare delete failed update: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return;
+    }
+    sqlite3_bind_text(stmt, 1, message_id.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        std::cerr << "[SQL] Update failed: " << sqlite3_errmsg(db_.get()) << std::endl;
+    }
+    sqlite3_finalize(stmt);
+}
+
 void db_manager::mark_edit_accepted(const std::string &message_id) {
     const char *sql = "UPDATE messages SET edit_accepted = 1 WHERE message_id = ?;";
     sqlite3_stmt* stmt = nullptr;
@@ -197,7 +271,7 @@ void db_manager::mark_edit_failed(const std::string &message_id) {
 
 bool db_manager::get_message(const std::string &message_id, message &out) {
     const char *sql =
-        "SELECT message_id, sender_id, recipient_id, plaintext, ciphertext, accepted, timestamp, edited_at, edit_accepted "
+        "SELECT message_id, sender_id, recipient_id, plaintext, ciphertext, accepted, timestamp, edited_at, edit_accepted, delete_accepted, deleted_at "
         "FROM messages WHERE message_id = ?;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -216,6 +290,8 @@ bool db_manager::get_message(const std::string &message_id, message &out) {
         out.timestamp = sqlite3_column_int64(stmt, 6);
         out.edited_at = sqlite3_column_int64(stmt, 7);
         out.edit_accepted = sqlite3_column_int(stmt, 8);
+        out.delete_accepted = sqlite3_column_int(stmt, 9);
+        out.deleted_at = sqlite3_column_int64(stmt, 10);
         found = true;
     }
     sqlite3_finalize(stmt);
@@ -263,7 +339,7 @@ std::string db_manager::get_contact_address(const std::string& contact_id) {
 
 std::vector<db_manager::message> db_manager::get_pending_messages() {
     const char *sql =
-        "SELECT message_id, sender_id, recipient_id, plaintext, ciphertext, accepted, timestamp, edited_at, edit_accepted "
+        "SELECT message_id, sender_id, recipient_id, plaintext, ciphertext, accepted, timestamp, edited_at, edit_accepted, delete_accepted, deleted_at "
         "FROM messages WHERE accepted = 0;";
     sqlite3_stmt* stmt = nullptr;
     std::vector<message> result;
@@ -282,6 +358,8 @@ std::vector<db_manager::message> db_manager::get_pending_messages() {
         msg.timestamp = sqlite3_column_int64(stmt, 6);
         msg.edited_at = sqlite3_column_int64(stmt, 7);
         msg.edit_accepted = sqlite3_column_int(stmt, 8);
+        msg.delete_accepted = sqlite3_column_int(stmt, 9);
+        msg.deleted_at = sqlite3_column_int64(stmt, 10);
         result.push_back(std::move(msg));
     }
     sqlite3_finalize(stmt);
@@ -290,7 +368,7 @@ std::vector<db_manager::message> db_manager::get_pending_messages() {
 
 std::vector<db_manager::message> db_manager::get_pending_edits() {
     const char *sql =
-        "SELECT message_id, sender_id, recipient_id, plaintext, ciphertext, accepted, timestamp, edited_at, edit_accepted "
+        "SELECT message_id, sender_id, recipient_id, plaintext, ciphertext, accepted, timestamp, edited_at, edit_accepted, delete_accepted, deleted_at "
         "FROM messages WHERE edit_accepted = 0 AND edited_at != 0;";
     sqlite3_stmt* stmt = nullptr;
     std::vector<message> result;
@@ -309,6 +387,37 @@ std::vector<db_manager::message> db_manager::get_pending_edits() {
         msg.timestamp = sqlite3_column_int64(stmt, 6);
         msg.edited_at = sqlite3_column_int64(stmt, 7);
         msg.edit_accepted = sqlite3_column_int(stmt, 8);
+        msg.delete_accepted = sqlite3_column_int(stmt, 9);
+        msg.deleted_at = sqlite3_column_int64(stmt, 10);
+        result.push_back(std::move(msg));
+    }
+    sqlite3_finalize(stmt);
+    return result;
+}
+
+std::vector<db_manager::message> db_manager::get_pending_deletes() {
+    const char *sql =
+        "SELECT message_id, sender_id, recipient_id, plaintext, ciphertext, accepted, timestamp, edited_at, edit_accepted, delete_accepted, deleted_at "
+        "FROM messages WHERE delete_accepted = 0 AND accepted = 3;";
+    sqlite3_stmt* stmt = nullptr;
+    std::vector<message> result;
+    if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare select pending deletes: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return result;
+    }
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        message msg;
+        msg.message_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        msg.sender_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        msg.recipient_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        msg.plaintext = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        msg.ciphertext = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+        msg.accepted = sqlite3_column_int(stmt, 5);
+        msg.timestamp = sqlite3_column_int64(stmt, 6);
+        msg.edited_at = sqlite3_column_int64(stmt, 7);
+        msg.edit_accepted = sqlite3_column_int(stmt, 8);
+        msg.delete_accepted = sqlite3_column_int(stmt, 9);
+        msg.deleted_at = sqlite3_column_int64(stmt, 10);
         result.push_back(std::move(msg));
     }
     sqlite3_finalize(stmt);
@@ -330,7 +439,7 @@ std::vector<db_manager::contact_info> db_manager::get_contacts_with_latest_messa
         info.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt_contacts, 1));
         info.server_address = reinterpret_cast<const char*>(sqlite3_column_text(stmt_contacts, 2));
         const char *sql_latest =
-            "SELECT message_id, sender_id, recipient_id, plaintext, ciphertext, accepted, timestamp, edited_at, edit_accepted "
+            "SELECT message_id, sender_id, recipient_id, plaintext, ciphertext, accepted, timestamp, edited_at, edit_accepted, delete_accepted, deleted_at "
             "FROM messages "
             "WHERE ((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)) AND accepted != 3 "
             "ORDER BY timestamp DESC LIMIT 1;";
@@ -352,6 +461,8 @@ std::vector<db_manager::contact_info> db_manager::get_contacts_with_latest_messa
                 msg.timestamp = sqlite3_column_int64(stmt_latest, 6);
                 msg.edited_at = sqlite3_column_int64(stmt_latest, 7);
                 msg.edit_accepted = sqlite3_column_int(stmt_latest, 8);
+                msg.delete_accepted = sqlite3_column_int(stmt_latest, 9);
+                msg.deleted_at = sqlite3_column_int64(stmt_latest, 10);
                 info.latest_message = std::move(msg);
             }
             sqlite3_finalize(stmt_latest);
@@ -368,7 +479,7 @@ std::vector<db_manager::contact_info> db_manager::get_contacts_with_latest_messa
 std::vector<db_manager::message> db_manager::get_messages_between(const std::string& self_id, const std::string& other_id) {
     std::vector<message> result;
     const char *sql =
-        "SELECT message_id, sender_id, recipient_id, plaintext, ciphertext, accepted, timestamp, edited_at, edit_accepted "
+        "SELECT message_id, sender_id, recipient_id, plaintext, ciphertext, accepted, timestamp, edited_at, edit_accepted, delete_accepted, deleted_at "
         "FROM messages "
         "WHERE ((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)) AND accepted != 3 "
         "ORDER BY timestamp ASC;";
@@ -392,6 +503,8 @@ std::vector<db_manager::message> db_manager::get_messages_between(const std::str
         msg.timestamp = sqlite3_column_int64(stmt, 6);
         msg.edited_at = sqlite3_column_int64(stmt, 7);
         msg.edit_accepted = sqlite3_column_int(stmt, 8);
+        msg.delete_accepted = sqlite3_column_int(stmt, 9);
+        msg.deleted_at = sqlite3_column_int64(stmt, 10);
         result.push_back(std::move(msg));
     }
     sqlite3_finalize(stmt);

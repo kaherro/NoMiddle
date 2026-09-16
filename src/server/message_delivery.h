@@ -17,3 +17,5 @@ bool retry_message_edit(db_manager &db, const db_manager::message &msg);
 
 bool deliver_message_delete(db_manager &db, const std::string &message_id,
     const std::string &sender_id, const std::string &recipient_id);
+
+bool retry_message_delete(db_manager &db, const db_manager::message &msg);

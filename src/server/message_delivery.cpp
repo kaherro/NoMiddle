@@ -41,7 +41,7 @@ std::optional<std::string> deliver_message(db_manager &db, const std::string &se
     const std::string &ciphertext, const std::string &plaintext, int64_t timestamp) {
 
     std::string message_id = generate_uuid();
-    db_manager::message msg{message_id, sender_id, recipient_id, plaintext, ciphertext, false, timestamp};
+    db_manager::message msg{message_id, sender_id, recipient_id, plaintext, ciphertext, false, timestamp, 0, 0, 1, 0};
     if(!db.add_message(msg)) {
         return std::nullopt;
     }
@@ -151,5 +151,29 @@ bool deliver_message_delete(db_manager &db, const std::string &message_id,
     std::string url = "https://" + server_address + "/accept_delete";
     auto result = send_message(url, data_json.dump());
 
-    return result.has_value() && *result == 200;
+    bool delivered = result.has_value() && *result == 200;
+    if (delivered) {
+        db.mark_delete_accepted(message_id);
+    }
+    return delivered;
+}
+
+bool retry_message_delete(db_manager &db, const db_manager::message &msg) {
+    std::string server_address = db.get_contact_address(msg.recipient_id);
+    if (server_address.empty()) return false;
+    cut_server_address(server_address);
+
+    crow::json::wvalue data_json;
+    data_json["message_id"]   = msg.message_id;
+    data_json["sender_id"]    = msg.sender_id;
+    data_json["recipient_id"] = msg.recipient_id;
+
+    std::string url = "https://" + server_address + "/accept_delete";
+    auto result = send_message(url, data_json.dump());
+
+    bool delivered = result.has_value() && *result == 200;
+    if (delivered) {
+        db.mark_delete_accepted(msg.message_id);
+    }
+    return delivered;
 }
