@@ -8,6 +8,7 @@
 constexpr int MESSAGE_PENDING   = 0; 
 constexpr int MESSAGE_DELIVERED = 1;
 constexpr int MESSAGE_FAILED    = 2;
+constexpr int MESSAGE_DELETED   = 3;
 
 class db_manager {
 public:
@@ -29,6 +30,7 @@ public:
     bool add_message(const message &msg);
     void mark_accepted(const std::string &message_id);
     void mark_failed(const std::string &message_id);
+    void mark_deleted(const std::string &message_id);
     void mark_edit_accepted(const std::string &message_id);
     void mark_edit_failed(const std::string &message_id);
     bool get_message(const std::string &message_id, message &out);

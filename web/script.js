@@ -11,6 +11,7 @@
         messages: `${baseUrl}/api/messages`,
         sendMessage: `${baseUrl}/api/send_message`,
         editMessage: `${baseUrl}/api/edit_message`,
+        deleteMessage: `${baseUrl}/api/delete_message`,
         upsertContact: `${baseUrl}/api/upsert_contact`,
         fetchRemotePublicKey: (addr) => {
             let url = addr;
@@ -392,9 +393,14 @@
             const latestDiv = el('div', 'latest-message');
             if (contact.latest_message) {
                 const msg = contact.latest_message;
-                latestDiv.textContent = `Latest message: ${msg.plaintext}`;
-                const timeSpan = el('span', 'latest-message-time', formatClockTime(msg.timestamp));
-                contactDiv.appendChild(timeSpan);
+                if (msg.accepted === 3) {
+                    latestDiv.textContent = 'No messages yet';
+                } 
+                else {
+                    latestDiv.textContent = `Latest message: ${msg.plaintext}`;
+                    const timeSpan = el('span', 'latest-message-time', formatClockTime(msg.timestamp));
+                    contactDiv.appendChild(timeSpan);
+                }
             } 
             else {
                 latestDiv.textContent = 'No messages yet';
@@ -460,6 +466,7 @@
     function renderMessages(messages) {
         messagesListEl.innerHTML = '';
         messages.forEach(msg => {
+            if (msg.accepted === 3) return;
             const messageDiv = el('div', 'message');
             const isMine = msg.sender_id === selfPublicKey;
             if (isMine) messageDiv.classList.add('mine');
@@ -538,6 +545,23 @@
         });
     }
 
+    async function deleteMessage(messageId) {
+        try {
+            const resp = await apiFetch(api.deleteMessage, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message_id: messageId })
+            });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            await fetchAndRenderMessages();
+            refreshContacts();
+        }
+        catch (err) {
+            console.error('Failed to delete message:', err);
+            alert('Failed to delete message');
+        }
+    }
+
     function isMine(msg) {
         return msg.sender_id === selfPublicKey;
     }
@@ -582,6 +606,16 @@
                 startEditMessage(msg);
             });
             contextMenuEl.appendChild(editBtn);
+            const deleteBtn = el('div', 'context-menu-item context-menu-danger', 'Delete');
+            deleteBtn.prepend(menuIcon(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z"/></svg>'
+            ));
+            deleteBtn.addEventListener('click', async () => {
+                hideContextMenu();
+                if (!confirm('Delete this message?')) return;
+                await deleteMessage(msg.message_id);
+            });
+            contextMenuEl.appendChild(deleteBtn);
         }
         contextMenuEl.style.display = 'block';
         const menuWidth = contextMenuEl.offsetWidth;
@@ -828,6 +862,12 @@
                     refreshContacts();
                 } 
                 else if (data.type === 'edit_message') {
+                    if (selectedContactId && data.contact_id === selectedContactId) {
+                        fetchAndRenderMessages();
+                    }
+                    refreshContacts();
+                }
+                else if (data.type === 'delete_message') {
                     if (selectedContactId && data.contact_id === selectedContactId) {
                         fetchAndRenderMessages();
                     }

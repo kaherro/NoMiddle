@@ -153,6 +153,20 @@ void db_manager::mark_failed(const std::string &message_id) {
     sqlite3_finalize(stmt);
 }
 
+void db_manager::mark_deleted(const std::string &message_id) {
+    const char *sql = "UPDATE messages SET accepted = 3 WHERE message_id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare delete update: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return;
+    }
+    sqlite3_bind_text(stmt, 1, message_id.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        std::cerr << "[SQL] Update failed: " << sqlite3_errmsg(db_.get()) << std::endl;
+    }
+    sqlite3_finalize(stmt);
+}
+
 void db_manager::mark_edit_accepted(const std::string &message_id) {
     const char *sql = "UPDATE messages SET edit_accepted = 1 WHERE message_id = ?;";
     sqlite3_stmt* stmt = nullptr;
@@ -318,7 +332,7 @@ std::vector<db_manager::contact_info> db_manager::get_contacts_with_latest_messa
         const char *sql_latest =
             "SELECT message_id, sender_id, recipient_id, plaintext, ciphertext, accepted, timestamp, edited_at, edit_accepted "
             "FROM messages "
-            "WHERE ((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)) "
+            "WHERE ((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)) AND accepted != 3 "
             "ORDER BY timestamp DESC LIMIT 1;";
         sqlite3_stmt* stmt_latest = nullptr;
         if (sqlite3_prepare_v2(db_.get(), sql_latest, -1, &stmt_latest, nullptr) == SQLITE_OK) {
@@ -356,7 +370,7 @@ std::vector<db_manager::message> db_manager::get_messages_between(const std::str
     const char *sql =
         "SELECT message_id, sender_id, recipient_id, plaintext, ciphertext, accepted, timestamp, edited_at, edit_accepted "
         "FROM messages "
-        "WHERE ((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)) "
+        "WHERE ((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)) AND accepted != 3 "
         "ORDER BY timestamp ASC;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {

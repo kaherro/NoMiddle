@@ -145,6 +145,19 @@ int main(int argc, char* argv[]) {
         }
     };
 
+    auto notify_delete_message = [&ws_mutex, &ws_clients](const std::string &message_id, const std::string &other_party_id) {
+        crow::json::wvalue payload;
+        payload["type"]       = "delete_message";
+        payload["message_id"] = message_id;
+        payload["contact_id"] = other_party_id; 
+        std::string data = payload.dump();
+
+        std::lock_guard<std::mutex> lock(ws_mutex);
+        for (auto* conn : ws_clients) {
+            conn->send_text(data);
+        }
+    };
+
     auto is_authed = [&db](const crow::request &req) {
         return authenticate(db, header_value(req, "X-Client-Id"), header_value(req, "X-Client-Secret"));
     };
@@ -298,6 +311,34 @@ int main(int argc, char* argv[]) {
         return crow::response(200, res);
     });
 
+    CROW_ROUTE(app, "/api/delete_message").methods(crow::HTTPMethod::POST)
+    ([&db, &self_public_key, &notify_delete_message, &is_authed](const crow::request &req) {
+        if (!is_authed(req)) {
+            return crow::response(401, crow::json::wvalue{{"error", "Unauthorized"}});
+        }
+        auto data_json = crow::json::load(req.body);
+        if (!data_json) {
+            return crow::response(400, crow::json::wvalue{{"error", "Invalid JSON"}});
+        }
+        if (!data_json.has("message_id")) {
+            return crow::response(400, crow::json::wvalue{{"error", "Missing message_id"}});
+        }
+        std::string message_id = data_json["message_id"].s();
+        db_manager::message msg;
+        if (!db.get_message(message_id, msg)) {
+            return crow::response(404, crow::json::wvalue{{"error", "Unknown message"}});
+        }
+        if (msg.sender_id != self_public_key) {
+            return crow::response(403, crow::json::wvalue{{"error", "Cannot delete message sent by someone else"}});
+        }
+        db.mark_deleted(message_id);
+        deliver_message_delete(db, message_id, self_public_key, msg.recipient_id);
+        notify_delete_message(message_id, msg.recipient_id);
+        crow::json::wvalue res;
+        res["message_id"] = message_id;
+        return crow::response(200, res);
+    });
+
     CROW_ROUTE(app, "/accept_message").methods(crow::HTTPMethod::POST)
     ([&db, &self_public_key, &keys, &notify_new_message](const crow::request &req) {
         auto data_json = crow::json::load(req.body);
@@ -366,6 +407,33 @@ int main(int argc, char* argv[]) {
         }
         db.mark_edit_accepted(message_id);
         notify_edit_message(message_id, sender_id);
+        return crow::response(200);
+    });
+    
+    CROW_ROUTE(app, "/accept_delete").methods(crow::HTTPMethod::POST)
+    ([&db, &self_public_key, &notify_delete_message](const crow::request &req) {
+        auto data_json = crow::json::load(req.body);
+        if(!data_json) {
+            return crow::response(400, crow::json::wvalue{{"error", "Invalid JSON"}});
+        }
+        if(!data_json.has("message_id") || !data_json.has("sender_id") || !data_json.has("recipient_id")) {
+            return crow::response(400, crow::json::wvalue{{"error", "Missing of the arguments"}});
+        }
+        std::string message_id = data_json["message_id"].s();
+        std::string sender_id = data_json["sender_id"].s();
+        std::string recipient_id = data_json["recipient_id"].s();
+        if (recipient_id != self_public_key) {
+            return crow::response(400, crow::json::wvalue{{"error", "Message delete not intended for this user"}});
+        }
+        db_manager::message msg;
+        if (!db.get_message(message_id, msg)) {
+            return crow::response(200);
+        }
+        if (msg.sender_id != sender_id) {
+            return crow::response(400, crow::json::wvalue{{"error", "Sender does not match message"}});
+        }
+        db.mark_deleted(message_id);
+        notify_delete_message(message_id, sender_id);
         return crow::response(200);
     });
     

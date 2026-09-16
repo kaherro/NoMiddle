@@ -136,3 +136,20 @@ bool retry_message_edit(db_manager &db, const db_manager::message &msg) {
     }
     return delivered;
 }
+
+bool deliver_message_delete(db_manager &db, const std::string &message_id,
+    const std::string &sender_id, const std::string &recipient_id) {
+    std::string server_address = db.get_contact_address(recipient_id);
+    if (server_address.empty()) return false;
+    cut_server_address(server_address);
+
+    crow::json::wvalue data_json;
+    data_json["message_id"]   = message_id;
+    data_json["sender_id"]    = sender_id;
+    data_json["recipient_id"] = recipient_id;
+
+    std::string url = "https://" + server_address + "/accept_delete";
+    auto result = send_message(url, data_json.dump());
+
+    return result.has_value() && *result == 200;
+}

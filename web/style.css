@@ -352,6 +352,15 @@ body {
 .context-menu-item:hover {
     background: #343b48;
 }
+.context-menu-item.context-menu-danger {
+    color: #ff6b6b;
+}
+.context-menu-item.context-menu-danger:hover {
+    background: rgba(255, 107, 107, 0.12);
+}
+.context-menu-item.context-menu-danger .context-menu-icon {
+    color: #ff6b6b;
+}
 .context-menu-icon {
     display: flex;
     align-items: center;
