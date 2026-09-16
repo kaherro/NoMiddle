@@ -364,6 +364,7 @@ int main(int argc, char* argv[]) {
         if (!db.update_message_edit(message_id, plaintext.value(), ciphertext, edited_at)) {
             return crow::response(500, crow::json::wvalue{{"error", "Failed to update message"}});
         }
+        db.mark_edit_accepted(message_id);
         notify_edit_message(message_id, sender_id);
         return crow::response(200);
     });

@@ -12,3 +12,5 @@ bool deliver_message_edit(db_manager &db, const std::string &message_id, const s
     const std::string &recipient_id, const std::string &ciphertext, int64_t edited_at);
 
 bool retry_deliver_message(db_manager &db, const db_manager::message &msg);
+
+bool retry_message_edit(db_manager &db, const db_manager::message &msg);

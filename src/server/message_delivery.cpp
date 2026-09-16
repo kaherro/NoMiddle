@@ -85,7 +85,11 @@ bool deliver_message_edit(db_manager &db, const std::string &message_id, const s
     std::string url = "https://" + server_address + "/accept_edit";
     auto result = send_message(url, data_json.dump());
 
-    return result.has_value() && *result == 200;
+    bool delivered = result.has_value() && *result == 200;
+    if (delivered) {
+        db.mark_edit_accepted(message_id);
+    }
+    return delivered;
 }
 
 bool retry_deliver_message(db_manager &db, const db_manager::message &msg) {
@@ -107,6 +111,28 @@ bool retry_deliver_message(db_manager &db, const db_manager::message &msg) {
     bool delivered = result.has_value() && *result == 200;
     if (delivered) {
         db.mark_accepted(msg.message_id);
+    }
+    return delivered;
+}
+
+bool retry_message_edit(db_manager &db, const db_manager::message &msg) {
+    std::string server_address = db.get_contact_address(msg.recipient_id);
+    if (server_address.empty()) return false;
+    cut_server_address(server_address);
+
+    crow::json::wvalue data_json;
+    data_json["message_id"]   = msg.message_id;
+    data_json["sender_id"]    = msg.sender_id;
+    data_json["recipient_id"] = msg.recipient_id;
+    data_json["ciphertext"]   = msg.ciphertext;
+    data_json["edited_at"]    = msg.edited_at;
+
+    std::string url = "https://" + server_address + "/accept_edit";
+    auto result = send_message(url, data_json.dump());
+
+    bool delivered = result.has_value() && *result == 200;
+    if (delivered) {
+        db.mark_edit_accepted(msg.message_id);
     }
     return delivered;
 }

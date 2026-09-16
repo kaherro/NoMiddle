@@ -12,6 +12,10 @@ void start_retrying_worker(db_manager &db, std::atomic<bool> &running) {
         if(pending_messages.empty()) {
             std::cout << "[RETRY_WORKER] No pending messages left\n"; 
         }
+        std::vector<db_manager::message> pending_edits = db.get_pending_edits();
+        if(pending_edits.empty()) {
+            std::cout << "[RETRY_WORKER] No pending edits left\n";
+        }
         int64_t current_time = static_cast<int64_t>(std::time(nullptr));
         for(auto msg : pending_messages) {
             if(retry_deliver_message(db, msg)) {
@@ -23,6 +27,18 @@ void start_retrying_worker(db_manager &db, std::atomic<bool> &running) {
                     std::cout << "[RETRY_WORKER] Message " << msg.message_id << " now is nomore in retrying_worker\n"; 
                 }
                 std::cout << "[RETRY_WORKER] " << msg.recipient_id << " is still offline\n"; 
+            }
+        }
+        for(auto msg : pending_edits) {
+            if(retry_message_edit(db, msg)) {
+                std::cout << "[RETRY_WORKER] Edit of message " << msg.message_id << " successfully delivered\n"; 
+            }
+            else {
+                if(msg.edited_at != 0 && current_time - msg.edited_at > 86400) {
+                    db.mark_edit_failed(msg.message_id); 
+                    std::cout << "[RETRY_WORKER] Edit of message " << msg.message_id << " now is nomore in retrying_worker\n"; 
+                }
+                std::cout << "[RETRY_WORKER] Edit of message " << msg.message_id << " for " << msg.recipient_id << " is still pending\n"; 
             }
         }
         for (int i = 0; i < 30 && running; ++i) {
