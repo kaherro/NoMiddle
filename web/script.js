@@ -10,6 +10,7 @@
         contacts: `${baseUrl}/api/contacts`,
         messages: `${baseUrl}/api/messages`,
         sendMessage: `${baseUrl}/api/send_message`,
+        editMessage: `${baseUrl}/api/edit_message`,
         upsertContact: `${baseUrl}/api/upsert_contact`,
         fetchRemotePublicKey: (addr) => {
             let url = addr;
@@ -181,6 +182,7 @@
     let selectedContactId = null;
     let lastContacts = [];
     let pendingSelfMessageId = null;
+    let editingMessage = null;
 
     const messengerWindowEl = document.getElementById('messenger-window');
 
@@ -194,6 +196,8 @@
     const messagesListEl = document.getElementById('messages-list');
     const messageInputEl = document.getElementById('message-text');
     const sendButtonEl = document.getElementById('send-button');
+    const editBarEl = document.getElementById('edit-bar');
+    const editBarCancelBtn = document.getElementById('edit-bar-cancel');
     const addContactBtnEl = document.getElementById('add-contact-button');
     const addContactOverlayEl = document.getElementById('add-contact-overlay');
     const addContactWindowEl = document.getElementById('add-contact-window');
@@ -419,6 +423,7 @@
     function selectContact(contactId, contactName) {
         selectedContactId = contactId;
         localStorage.setItem('selectedContactId', contactId);
+        cancelEditing();
         contactNameTextEl.textContent = contactName || '(unknown)';
         chatHeaderEl.style.display = '';
         messageFieldEl.style.display = '';
@@ -430,6 +435,7 @@
     function clearChatArea() {
         selectedContactId = null;
         localStorage.removeItem('selectedContactId');
+        cancelEditing();
         contactNameTextEl.textContent = '';
         chatHeaderEl.style.display = 'none';
         messageFieldEl.style.display = 'none';
@@ -458,25 +464,142 @@
             const isMine = msg.sender_id === selfPublicKey;
             if (isMine) messageDiv.classList.add('mine');
             else messageDiv.classList.add('theirs');
+            if (editingMessage && msg.message_id === editingMessage.message_id) {
+                messageDiv.classList.add('editing');
+            }
             const textDiv = el('div', 'message-text', msg.plaintext);
             messageDiv.appendChild(textDiv);
+            messageDiv.addEventListener('contextmenu', e => {
+                e.preventDefault();
+                showContextMenu(e.clientX, e.clientY, msg);
+            });
+
+            const metaRow = el('div', 'message-meta');
+            if (msg.edited_at) {
+                metaRow.appendChild(el('span', 'message-edited', 'edited'));
+            }
             if (isMine) {
                 const statusDiv = el('div', 'message-status');
                 if (msg.accepted === 1) {
                     statusDiv.textContent = '✓';
-                } 
+                }
                 else if (msg.accepted === 2) {
                     statusDiv.textContent = '✗';
                 }
                 else {
                     statusDiv.textContent = '⏳';
                 }
-                messageDiv.appendChild(statusDiv);
+                metaRow.appendChild(statusDiv);
+            }
+            if (metaRow.childNodes.length > 0) {
+                messageDiv.appendChild(metaRow);
             }
             messagesListEl.appendChild(messageDiv);
         });
         messagesListEl.scrollTop = messagesListEl.scrollHeight;
     }
+
+    async function editMessage(messageId, text) {
+        try {
+            const resp = await apiFetch(api.editMessage, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message_id: messageId,
+                    text: text
+                })
+            });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            cancelEditing();
+            await fetchAndRenderMessages();
+            refreshContacts();
+        }
+        catch (err) {
+            console.error('Failed to edit message:', err);
+            alert('Failed to edit message');
+        }
+    }
+
+    function cancelEditing() {
+        editingMessage = null;
+        editBarEl.style.display = 'none';
+        messageInputEl.value = '';
+    }
+
+    function startEditMessage(msg) {
+        if (!isMine(msg)) return;
+        editingMessage = msg;
+        messageInputEl.value = msg.plaintext;
+        editBarEl.style.display = 'flex';
+        messageInputEl.focus();
+        messageInputEl.setSelectionRange(messageInputEl.value.length, messageInputEl.value.length);
+        fetchAndRenderMessages().then(() => {
+            messagesListEl.scrollTop = messagesListEl.scrollHeight;
+        });
+    }
+
+    function isMine(msg) {
+        return msg.sender_id === selfPublicKey;
+    }
+
+    const contextMenuEl = el('div', 'context-menu');
+    document.body.appendChild(contextMenuEl);
+
+    function hideContextMenu() {
+        contextMenuEl.style.display = 'none';
+        contextMenuEl.innerHTML = '';
+    }
+
+    function menuIcon(svg) {
+        const span = el('span', 'context-menu-icon');
+        span.innerHTML = svg;
+        return span;
+    }
+
+    function showContextMenu(x, y, msg) {
+        contextMenuEl.innerHTML = '';
+        const copyBtn = el('div', 'context-menu-item', 'Copy');
+        copyBtn.prepend(menuIcon(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'
+        ));
+        copyBtn.addEventListener('click', async () => {
+            hideContextMenu();
+            try {
+                await navigator.clipboard.writeText(msg.plaintext);
+            }
+            catch (e) {
+                console.error('Failed to copy message:', e);
+            }
+        });
+        contextMenuEl.appendChild(copyBtn);
+        if (isMine(msg)) {
+            const editBtn = el('div', 'context-menu-item', 'Edit');
+            editBtn.prepend(menuIcon(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>'
+            ));
+            editBtn.addEventListener('click', () => {
+                hideContextMenu();
+                startEditMessage(msg);
+            });
+            contextMenuEl.appendChild(editBtn);
+        }
+        contextMenuEl.style.display = 'block';
+        const menuWidth = contextMenuEl.offsetWidth;
+        const menuHeight = contextMenuEl.offsetHeight;
+        const left = x + menuWidth > window.innerWidth ? x - menuWidth - 4 : x;
+        const top = y + menuHeight > window.innerHeight ? y - menuHeight - 4 : y;
+        contextMenuEl.style.left = `${Math.max(0, left)}px`;
+        contextMenuEl.style.top = `${Math.max(0, top)}px`;
+    }
+
+    document.addEventListener('click', e => {
+        if (!contextMenuEl.contains(e.target)) hideContextMenu();
+    });
+    document.addEventListener('contextmenu', e => {
+        if (!e.target.closest('.message')) hideContextMenu();
+    });
+    document.addEventListener('scroll', hideContextMenu, true);
+    window.addEventListener('resize', hideContextMenu);
 
     async function fetchAndRenderMessages() {
         const messages = await fetchMessages();
@@ -519,14 +642,34 @@
         }
     }
 
-    sendButtonEl.addEventListener('click', () => {
-        sendMessage(messageInputEl.value.trim());
-    });
+    function doSend() {
+        const text = messageInputEl.value.trim();
+        if (!text) return;
+        if (editingMessage) {
+            if (text === editingMessage.plaintext) {
+                cancelEditing();
+                return;
+            }
+            editMessage(editingMessage.message_id, text);
+        }
+        else {
+            sendMessage(text);
+        }
+    }
+
+    sendButtonEl.addEventListener('click', doSend);
     messageInputEl.addEventListener('keypress', e => {
         if (e.key === 'Enter') {
-            sendMessage(messageInputEl.value.trim());
+            e.preventDefault();
+            doSend();
         }
     });
+    messageInputEl.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && editingMessage) {
+            cancelEditing();
+        }
+    });
+    editBarCancelBtn.addEventListener('click', cancelEditing);
 
     addContactBtnEl.addEventListener('click', () => {
         addContactOverlayEl.style.display = 'flex';
@@ -684,6 +827,12 @@
                     }
                     refreshContacts();
                 } 
+                else if (data.type === 'edit_message') {
+                    if (selectedContactId && data.contact_id === selectedContactId) {
+                        fetchAndRenderMessages();
+                    }
+                    refreshContacts();
+                }
                 else if (data.type === 'auth_request') {
                     openApprovalDialog(data.request_id, data.device_name || 'New device');
                 }

@@ -33,7 +33,8 @@ void db_manager::init_schema() {
             plaintext            TEXT NOT NULL,
             ciphertext            TEXT NOT NULL,
             accepted        INTEGER NOT NULL DEFAULT 0,
-            timestamp       INTEGER NOT NULL DEFAULT (unixepoch())
+            timestamp       INTEGER NOT NULL DEFAULT (unixepoch()),
+            edited_at       INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS clients (
@@ -62,9 +63,6 @@ void db_manager::init_schema() {
         sqlite3_free(errMsg);
         throw std::runtime_error("[SQL] Error creating schema: " + error);
     }
-    sqlite3_exec(db_.get(),
-        "ALTER TABLE clients ADD COLUMN device_name TEXT NOT NULL DEFAULT '';",
-        nullptr, nullptr, nullptr);
     std::cout << "[SQL] Schema ready.\n";
 }
 
@@ -154,6 +152,52 @@ void db_manager::mark_failed(const std::string &message_id) {
     sqlite3_finalize(stmt);
 }
 
+bool db_manager::get_message(const std::string &message_id, message &out) {
+    const char *sql =
+        "SELECT message_id, sender_id, recipient_id, plaintext, ciphertext, accepted, timestamp, edited_at "
+        "FROM messages WHERE message_id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare message select: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, message_id.c_str(), -1, SQLITE_TRANSIENT);
+    bool found = false;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        out.message_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        out.sender_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        out.recipient_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        out.plaintext = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        out.ciphertext = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+        out.accepted = sqlite3_column_int(stmt, 5);
+        out.timestamp = sqlite3_column_int64(stmt, 6);
+        out.edited_at = sqlite3_column_int64(stmt, 7);
+        found = true;
+    }
+    sqlite3_finalize(stmt);
+    return found;
+}
+
+bool db_manager::update_message_edit(const std::string &message_id, const std::string &plaintext,
+                                    const std::string &ciphertext, int64_t edited_at) {
+    const char *sql = "UPDATE messages SET plaintext = ?, ciphertext = ?, edited_at = ? WHERE message_id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare message edit: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, plaintext.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, ciphertext.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 3, edited_at);
+    sqlite3_bind_text(stmt, 4, message_id.c_str(), -1, SQLITE_TRANSIENT);
+    bool ok = (sqlite3_step(stmt) == SQLITE_DONE);
+    if (!ok) {
+        std::cerr << "[SQL] Message edit failed: " << sqlite3_errmsg(db_.get()) << std::endl;
+    }
+    sqlite3_finalize(stmt);
+    return ok;
+}
+
 std::string db_manager::get_contact_address(const std::string& contact_id) {
     const char *sql = "SELECT server_address FROM contacts WHERE contact_id = ?;";
     sqlite3_stmt* stmt = nullptr;
@@ -175,7 +219,7 @@ std::string db_manager::get_contact_address(const std::string& contact_id) {
 
 std::vector<db_manager::message> db_manager::get_pending_messages() {
     const char *sql =
-        "SELECT message_id, sender_id, recipient_id, plaintext, ciphertext, accepted, timestamp "
+        "SELECT message_id, sender_id, recipient_id, plaintext, ciphertext, accepted, timestamp, edited_at "
         "FROM messages WHERE accepted = 0;";
     sqlite3_stmt* stmt = nullptr;
     std::vector<message> result;
@@ -192,6 +236,7 @@ std::vector<db_manager::message> db_manager::get_pending_messages() {
         msg.ciphertext = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
         msg.accepted = sqlite3_column_int(stmt, 5);
         msg.timestamp = sqlite3_column_int64(stmt, 6);
+        msg.edited_at = sqlite3_column_int64(stmt, 7);
         result.push_back(std::move(msg));
     }
     sqlite3_finalize(stmt);
@@ -213,7 +258,7 @@ std::vector<db_manager::contact_info> db_manager::get_contacts_with_latest_messa
         info.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt_contacts, 1));
         info.server_address = reinterpret_cast<const char*>(sqlite3_column_text(stmt_contacts, 2));
         const char *sql_latest =
-            "SELECT message_id, sender_id, recipient_id, plaintext, ciphertext, accepted, timestamp "
+            "SELECT message_id, sender_id, recipient_id, plaintext, ciphertext, accepted, timestamp, edited_at "
             "FROM messages "
             "WHERE ((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)) "
             "ORDER BY timestamp DESC LIMIT 1;";
@@ -233,6 +278,7 @@ std::vector<db_manager::contact_info> db_manager::get_contacts_with_latest_messa
                 msg.ciphertext = reinterpret_cast<const char*>(sqlite3_column_text(stmt_latest, 4));
                 msg.accepted = sqlite3_column_int(stmt_latest, 5);
                 msg.timestamp = sqlite3_column_int64(stmt_latest, 6);
+                msg.edited_at = sqlite3_column_int64(stmt_latest, 7);
                 info.latest_message = std::move(msg);
             }
             sqlite3_finalize(stmt_latest);
@@ -249,7 +295,7 @@ std::vector<db_manager::contact_info> db_manager::get_contacts_with_latest_messa
 std::vector<db_manager::message> db_manager::get_messages_between(const std::string& self_id, const std::string& other_id) {
     std::vector<message> result;
     const char *sql =
-        "SELECT message_id, sender_id, recipient_id, plaintext, ciphertext, accepted, timestamp "
+        "SELECT message_id, sender_id, recipient_id, plaintext, ciphertext, accepted, timestamp, edited_at "
         "FROM messages "
         "WHERE ((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)) "
         "ORDER BY timestamp ASC;";
@@ -271,6 +317,7 @@ std::vector<db_manager::message> db_manager::get_messages_between(const std::str
         msg.ciphertext = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
         msg.accepted = sqlite3_column_int(stmt, 5);
         msg.timestamp = sqlite3_column_int64(stmt, 6);
+        msg.edited_at = sqlite3_column_int64(stmt, 7);
         result.push_back(std::move(msg));
     }
     sqlite3_finalize(stmt);

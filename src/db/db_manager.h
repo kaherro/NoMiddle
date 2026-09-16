@@ -21,12 +21,16 @@ public:
         std::string ciphertext; 
         int accepted;
         int64_t timestamp; // unix-time
+        int64_t edited_at; // 0 if never edited
     };
 
     bool upsert_contact(const std::string &contact_id, const std::string &name, const std::string &server_address);
     bool add_message(const message &msg);
     void mark_accepted(const std::string &message_id);
     void mark_failed(const std::string &message_id);
+    bool get_message(const std::string &message_id, message &out);
+    bool update_message_edit(const std::string &message_id, const std::string &plaintext,
+                            const std::string &ciphertext, int64_t edited_at);
     std::string get_contact_address(const std::string& contact_id);
     std::vector<message> get_pending_messages();
 

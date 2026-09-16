@@ -132,6 +132,19 @@ int main(int argc, char* argv[]) {
         }
     };
 
+    auto notify_edit_message = [&ws_mutex, &ws_clients](const std::string &message_id, const std::string &other_party_id) {
+        crow::json::wvalue payload;
+        payload["type"]       = "edit_message";
+        payload["message_id"] = message_id;
+        payload["contact_id"] = other_party_id; 
+        std::string data = payload.dump();
+
+        std::lock_guard<std::mutex> lock(ws_mutex);
+        for (auto* conn : ws_clients) {
+            conn->send_text(data);
+        }
+    };
+
     auto is_authed = [&db](const crow::request &req) {
         return authenticate(db, header_value(req, "X-Client-Id"), header_value(req, "X-Client-Secret"));
     };
@@ -247,6 +260,44 @@ int main(int argc, char* argv[]) {
         return crow::response(200, res);
     });
 
+    CROW_ROUTE(app, "/api/edit_message").methods(crow::HTTPMethod::POST)
+    ([&db, &self_public_key, &keys, &notify_edit_message, &is_authed](const crow::request &req) {
+        if (!is_authed(req)) {
+            return crow::response(401, crow::json::wvalue{{"error", "Unauthorized"}});
+        }
+        auto data_json = crow::json::load(req.body);
+        if (!data_json) {
+            return crow::response(400, crow::json::wvalue{{"error", "Invalid JSON"}});
+        }
+        if (!data_json.has("message_id") || !data_json.has("text")) {
+            return crow::response(400, crow::json::wvalue{{"error", "Missing message_id or text"}});
+        }
+        std::string message_id = data_json["message_id"].s();
+        std::string plaintext = data_json["text"].s();
+        db_manager::message msg;
+        if (!db.get_message(message_id, msg)) {
+            return crow::response(404, crow::json::wvalue{{"error", "Unknown message"}});
+        }
+        if (msg.sender_id != self_public_key) {
+            return crow::response(403, crow::json::wvalue{{"error", "Cannot edit message sent by someone else"}});
+        }
+        std::optional<std::string> ciphertext = encrypt_message(plaintext, msg.recipient_id, keys->private_key_b64);
+        if (!ciphertext) {
+            return crow::response(400, crow::json::wvalue{{"error", "Failed to encrypt message"}});
+        }
+        int64_t edited_at = static_cast<int64_t>(std::time(nullptr));
+        if (!db.update_message_edit(message_id, plaintext, *ciphertext, edited_at)) {
+            return crow::response(500, crow::json::wvalue{{"error", "Failed to update message"}});
+        }
+        deliver_message_edit(db, message_id, self_public_key, msg.recipient_id, *ciphertext, edited_at);
+        notify_edit_message(message_id, msg.recipient_id);
+        crow::json::wvalue res;
+        res["message_id"] = message_id;
+        res["plaintext"] = plaintext;
+        res["edited_at"] = edited_at;
+        return crow::response(200, res);
+    });
+
     CROW_ROUTE(app, "/accept_message").methods(crow::HTTPMethod::POST)
     ([&db, &self_public_key, &keys, &notify_new_message](const crow::request &req) {
         auto data_json = crow::json::load(req.body);
@@ -284,6 +335,39 @@ int main(int argc, char* argv[]) {
         return crow::response(200);
     });
     
+    CROW_ROUTE(app, "/accept_edit").methods(crow::HTTPMethod::POST)
+    ([&db, &self_public_key, &keys, &notify_edit_message](const crow::request &req) {
+        auto data_json = crow::json::load(req.body);
+        if(!data_json) {
+            return crow::response(400, crow::json::wvalue{{"error", "Invalid JSON"}});
+        }
+        if(!data_json.has("message_id") || !data_json.has("sender_id") || !data_json.has("recipient_id") ||
+            !data_json.has("ciphertext") || !data_json.has("edited_at")) {
+            return crow::response(400, crow::json::wvalue{{"error", "Missing of the arguments"}});
+        }
+        std::string message_id = data_json["message_id"].s();
+        std::string sender_id = data_json["sender_id"].s();
+        std::string recipient_id = data_json["recipient_id"].s();
+        std::string ciphertext = data_json["ciphertext"].s();
+        int64_t edited_at = data_json["edited_at"].i();
+        if (recipient_id != self_public_key) {
+            return crow::response(400, crow::json::wvalue{{"error", "Message edit not intended for this user"}});
+        }
+        db_manager::message msg;
+        if (!db.get_message(message_id, msg)) {
+            return crow::response(404, crow::json::wvalue{{"error", "Unknown message"}});
+        }
+        std::optional<std::string> plaintext = decrypt_message(ciphertext, sender_id, keys->private_key_b64);
+        if (!plaintext) {
+            return crow::response(400, crow::json::wvalue{{"error", "Failed to decrypt message"}});
+        }
+        if (!db.update_message_edit(message_id, plaintext.value(), ciphertext, edited_at)) {
+            return crow::response(500, crow::json::wvalue{{"error", "Failed to update message"}});
+        }
+        notify_edit_message(message_id, sender_id);
+        return crow::response(200);
+    });
+    
     CROW_ROUTE(app, "/api/contacts").methods(crow::HTTPMethod::GET)
     ([&db, &self_public_key, &is_authed](const crow::request &req) {
         if (!is_authed(req)) {
@@ -306,6 +390,7 @@ int main(int argc, char* argv[]) {
                 msg["plaintext"] = m.plaintext;
                 msg["accepted"] = m.accepted;
                 msg["timestamp"] = m.timestamp;
+                msg["edited_at"] = m.edited_at;
                 obj["latest_message"] = std::move(msg);
             } 
             else {
@@ -338,6 +423,7 @@ int main(int argc, char* argv[]) {
             obj["plaintext"] = m.plaintext;
             obj["accepted"] = m.accepted;
             obj["timestamp"] = m.timestamp;
+            obj["edited_at"] = m.edited_at;
             arr.push_back(std::move(obj));
         }
         result["messages"] = std::move(arr);

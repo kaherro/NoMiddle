@@ -33,8 +33,11 @@ body {
     font-size: 15px; 
     display: flex;
     flex-direction: row;
+    align-items: center;
     gap: 10px; 
     padding: 10px; 
+    box-sizing: border-box;
+    min-height: 52px;
     border-bottom: 1px solid #2a2f3a;
 }
 #messenger-naming {
@@ -231,6 +234,8 @@ body {
     justify-content: space-between;
     align-items: center;
     padding: 10px; 
+    box-sizing: border-box;
+    min-height: 52px;
     border-bottom: 1px solid #2a2f3a;
 }
 .chat-settings-button {
@@ -289,6 +294,9 @@ body {
     border-radius: 12px;
     font-size: 13px;
     line-height: 1.4;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
 }
 .message.theirs {
     align-self: flex-start;
@@ -309,11 +317,92 @@ body {
     font-size: 10px;
     opacity: 0.75;
 }
+.message-meta {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 3px;
+    font-size: 11px;
+    opacity: 0.85;
+}
+.context-menu {
+    position: fixed;
+    z-index: 10000;
+    min-width: 140px;
+    background: #232834;
+    border: 1px solid #2a2f3a;
+    border-radius: 8px;
+    padding: 4px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    display: none;
+}
+.context-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    font-size: 13px;
+    line-height: 1;
+    color: #e7e9ee;
+    border-radius: 6px;
+    cursor: pointer;
+    user-select: none;
+}
+.context-menu-item:hover {
+    background: #343b48;
+}
+.context-menu-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #8b93a3;
+    flex-shrink: 0;
+}
+.message-edited {
+    font-size: 10px;
+    opacity: 0.75;
+    font-style: italic;
+}
 #message-field {
     display: flex;
-    flex-direction: row;
+    flex-direction: column;
     padding: 10px;
     border-top: 1px solid #2a2f3a;
+    gap: 8px;
+}
+#message-field-row {
+    display: flex;
+    flex-direction: row;
+}
+#edit-bar {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 8px;
+    background: #232834;
+    border: 1px solid #2a2f3a;
+    border-radius: 6px;
+}
+#edit-bar-label {
+    font-size: 12px;
+    color: #4fd1ae;
+}
+#edit-bar-cancel {
+    background: transparent;
+    border: none;
+    color: #8b93a3;
+    font-size: 14px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 2px;
+}
+#edit-bar-cancel:hover {
+    color: #e7e9ee;
+}
+.message.editing {
+    outline: 2px solid #4fd1ae;
 }
 #message-text {
     flex: 1;
