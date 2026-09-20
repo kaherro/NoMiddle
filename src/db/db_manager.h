@@ -8,6 +8,7 @@
 constexpr int MESSAGE_PENDING   = 0; 
 constexpr int MESSAGE_DELIVERED = 1;
 constexpr int MESSAGE_FAILED    = 2;
+constexpr int MESSAGE_DELETED   = 3;
 
 class db_manager {
 public:
@@ -21,14 +22,29 @@ public:
         std::string ciphertext; 
         int accepted;
         int64_t timestamp; // unix-time
+        int64_t edited_at; // 0 if never edited
+        int edit_accepted;
+        int delete_accepted; // 1 if delete delivered, 0 if pending, 2 if failed
+        int64_t deleted_at; // 0 if never deleted
     };
 
     bool upsert_contact(const std::string &contact_id, const std::string &name, const std::string &server_address);
     bool add_message(const message &msg);
     void mark_accepted(const std::string &message_id);
     void mark_failed(const std::string &message_id);
+    void mark_deleted(const std::string &message_id);
+    void mark_delete_pending(const std::string &message_id);
+    void mark_delete_accepted(const std::string &message_id);
+    void mark_delete_failed(const std::string &message_id);
+    void mark_edit_accepted(const std::string &message_id);
+    void mark_edit_failed(const std::string &message_id);
+    bool get_message(const std::string &message_id, message &out);
+    bool update_message_edit(const std::string &message_id, const std::string &plaintext,
+                            const std::string &ciphertext, int64_t edited_at);
     std::string get_contact_address(const std::string& contact_id);
     std::vector<message> get_pending_messages();
+    std::vector<message> get_pending_edits();
+    std::vector<message> get_pending_deletes();
 
     struct contact_info {
         std::string contact_id;

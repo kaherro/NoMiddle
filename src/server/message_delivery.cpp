@@ -41,7 +41,7 @@ std::optional<std::string> deliver_message(db_manager &db, const std::string &se
     const std::string &ciphertext, const std::string &plaintext, int64_t timestamp) {
 
     std::string message_id = generate_uuid();
-    db_manager::message msg{message_id, sender_id, recipient_id, plaintext, ciphertext, false, timestamp};
+    db_manager::message msg{message_id, sender_id, recipient_id, plaintext, ciphertext, false, timestamp, 0, 0, 1, 0};
     if(!db.add_message(msg)) {
         return std::nullopt;
     }
@@ -68,6 +68,30 @@ std::optional<std::string> deliver_message(db_manager &db, const std::string &se
     }
 }
 
+bool deliver_message_edit(db_manager &db, const std::string &message_id, const std::string &sender_id,
+    const std::string &recipient_id, const std::string &ciphertext, int64_t edited_at) {
+
+    std::string server_address = db.get_contact_address(recipient_id);
+    if (server_address.empty()) return false;
+    cut_server_address(server_address); 
+
+    crow::json::wvalue data_json;
+    data_json["message_id"]   = message_id;
+    data_json["sender_id"]    = sender_id;
+    data_json["recipient_id"] = recipient_id;
+    data_json["ciphertext"]   = ciphertext;
+    data_json["edited_at"]    = edited_at;
+
+    std::string url = "https://" + server_address + "/accept_edit";
+    auto result = send_message(url, data_json.dump());
+
+    bool delivered = result.has_value() && *result == 200;
+    if (delivered) {
+        db.mark_edit_accepted(message_id);
+    }
+    return delivered;
+}
+
 bool retry_deliver_message(db_manager &db, const db_manager::message &msg) {
     std::string server_address = db.get_contact_address(msg.recipient_id);
     if (server_address.empty()) return false;
@@ -87,6 +111,69 @@ bool retry_deliver_message(db_manager &db, const db_manager::message &msg) {
     bool delivered = result.has_value() && *result == 200;
     if (delivered) {
         db.mark_accepted(msg.message_id);
+    }
+    return delivered;
+}
+
+bool retry_message_edit(db_manager &db, const db_manager::message &msg) {
+    std::string server_address = db.get_contact_address(msg.recipient_id);
+    if (server_address.empty()) return false;
+    cut_server_address(server_address);
+
+    crow::json::wvalue data_json;
+    data_json["message_id"]   = msg.message_id;
+    data_json["sender_id"]    = msg.sender_id;
+    data_json["recipient_id"] = msg.recipient_id;
+    data_json["ciphertext"]   = msg.ciphertext;
+    data_json["edited_at"]    = msg.edited_at;
+
+    std::string url = "https://" + server_address + "/accept_edit";
+    auto result = send_message(url, data_json.dump());
+
+    bool delivered = result.has_value() && *result == 200;
+    if (delivered) {
+        db.mark_edit_accepted(msg.message_id);
+    }
+    return delivered;
+}
+
+bool deliver_message_delete(db_manager &db, const std::string &message_id,
+    const std::string &sender_id, const std::string &recipient_id) {
+    std::string server_address = db.get_contact_address(recipient_id);
+    if (server_address.empty()) return false;
+    cut_server_address(server_address);
+
+    crow::json::wvalue data_json;
+    data_json["message_id"]   = message_id;
+    data_json["sender_id"]    = sender_id;
+    data_json["recipient_id"] = recipient_id;
+
+    std::string url = "https://" + server_address + "/accept_delete";
+    auto result = send_message(url, data_json.dump());
+
+    bool delivered = result.has_value() && *result == 200;
+    if (delivered) {
+        db.mark_delete_accepted(message_id);
+    }
+    return delivered;
+}
+
+bool retry_message_delete(db_manager &db, const db_manager::message &msg) {
+    std::string server_address = db.get_contact_address(msg.recipient_id);
+    if (server_address.empty()) return false;
+    cut_server_address(server_address);
+
+    crow::json::wvalue data_json;
+    data_json["message_id"]   = msg.message_id;
+    data_json["sender_id"]    = msg.sender_id;
+    data_json["recipient_id"] = msg.recipient_id;
+
+    std::string url = "https://" + server_address + "/accept_delete";
+    auto result = send_message(url, data_json.dump());
+
+    bool delivered = result.has_value() && *result == 200;
+    if (delivered) {
+        db.mark_delete_accepted(msg.message_id);
     }
     return delivered;
 }
