@@ -542,7 +542,7 @@ int main(int argc, char* argv[]) {
     });
 
     CROW_ROUTE(app, "/api/groups/<string>/add_member").methods(crow::HTTPMethod::POST)
-    ([&db, &self_public_key, &is_authed](const crow::request &req, const std::string &group_id) {
+    ([&db, &self_public_key, &is_authed, &keys](const crow::request &req, const std::string &group_id) {
         if (!is_authed(req)) return crow::response(401, crow::json::wvalue{{"error", "Unauthorized"}});
         auto data_json = crow::json::load(req.body);
         if (!data_json || !data_json.has("member_id") || !data_json.has("server_address")) {
@@ -576,7 +576,7 @@ int main(int argc, char* argv[]) {
     });
 
     CROW_ROUTE(app, "/api/groups/<string>/remove_member").methods(crow::HTTPMethod::POST)
-    ([&db, &self_public_key, &is_authed](const crow::request &req, const std::string &group_id) {
+    ([&db, &self_public_key, &is_authed, &keys](const crow::request &req, const std::string &group_id) {
         if (!is_authed(req)) return crow::response(401, crow::json::wvalue{{"error", "Unauthorized"}});
         auto data_json = crow::json::load(req.body);
         if (!data_json || !data_json.has("member_id")) {
@@ -637,6 +637,88 @@ int main(int argc, char* argv[]) {
         }
         result["members"] = std::move(arr);
         return crow::response(200, result);
+    });
+
+    CROW_ROUTE(app, "/api/groups/<string>/messages").methods(crow::HTTPMethod::POST)
+    ([&db, &self_public_key, &is_authed, &keys](const crow::request &req, const std::string &group_id) {
+        if (!is_authed(req)) return crow::response(401, crow::json::wvalue{{"error", "Unauthorized"}});
+        auto data_json = crow::json::load(req.body);
+        if (!data_json || !data_json.has("text")) {
+            return crow::response(400, crow::json::wvalue{{"error", "Invalid JSON or missing text"}});
+        }
+        std::string text = data_json["text"].s();
+        int64_t timestamp = static_cast<int64_t>(std::time(nullptr));
+        std::string message_id = generate_uuid();
+
+        std::vector<db_manager::group_member> members = db.get_group_members(group_id);
+        if (members.empty()) {
+            return crow::response(404, crow::json::wvalue{{"error", "Group not found or empty"}});
+        }
+
+        bool all_online = true;
+        for (const auto &m : members) {
+            if (m.member_id == self_public_key) continue; 
+            std::string server_address = m.server_address;
+            cut_server_address(server_address);
+            if (server_address.empty()) { 
+                all_online = false; 
+                continue; 
+            }
+
+            auto ciphertext = encrypt_message(text, m.member_id, keys->private_key_b64);
+            if (!ciphertext) { 
+                all_online = false; 
+                continue; 
+            }
+
+            db_manager::message msg;
+            msg.message_id = message_id;
+            msg.sender_id = self_public_key;
+            msg.recipient_id = m.member_id;
+            msg.group_id = group_id;
+            msg.plaintext = text;
+            msg.ciphertext = *ciphertext;
+            msg.timestamp = timestamp;
+            if (!db.add_message(msg)) { 
+                all_online = false; 
+                continue; 
+            }
+
+            std::string url = "https://" + server_address + "/accept_message";
+            auto result = send_message(url, crow::json::wvalue{{"message_id", message_id},
+                {"sender_id", self_public_key}, {"recipient_id", m.member_id},
+                {"group_id", group_id}, {"ciphertext", *ciphertext}, {"timestamp", timestamp}}.dump());
+            if (result.has_value() && *result == 200) {
+                db.mark_accepted(message_id);
+            } 
+            else {
+                all_online = false;
+            }
+        }
+
+        crow::json::wvalue result_json;
+        result_json["message_id"] = message_id;
+        result_json["delivered"]  = all_online;
+        return crow::response(200, result_json);
+    });
+
+    CROW_ROUTE(app, "/api/groups/<string>/messages").methods(crow::HTTPMethod::GET)
+    ([&db, &is_authed](const crow::request &req, const std::string &group_id) {
+        if (!is_authed(req)) return crow::response(401, crow::json::wvalue{{"error", "Unauthorized"}});
+        auto messages = db.get_messages_for_group(group_id);
+        crow::json::wvalue out;
+        std::vector<crow::json::wvalue> arr;
+        for (const auto &m : messages) {
+            crow::json::wvalue e;
+            e["message_id"] = m.message_id;
+            e["sender_id"] = m.sender_id;
+            e["group_id"] = m.group_id;
+            e["plaintext"] = m.plaintext;
+            e["timestamp"] = m.timestamp;
+            arr.push_back(std::move(e));
+        }
+        out["messages"] = std::move(arr);
+        return crow::response(200, out);
     });
 
     CROW_ROUTE(app, "/accept_group_update").methods(crow::HTTPMethod::POST)

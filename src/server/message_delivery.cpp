@@ -233,3 +233,78 @@ bool retry_group_update(db_manager &db, const db_manager::group_update &u) {
     if (ok) db.mark_group_update_accepted(u.group_id, u.member_id);
     return ok;
 }
+
+std::optional<std::string> deliver_group_message(db_manager &db, const std::string &group_id,
+    const std::string &sender_id, const std::vector<db_manager::group_member> &members,
+    const std::string &ciphertext, const std::string &plaintext, int64_t timestamp) {
+
+    std::string message_id = generate_uuid();
+    std::string plaintext_out = plaintext;
+    bool all_online = true;
+
+    for (const auto &m : members) {
+        if (m.member_id == sender_id) continue;
+        db_manager::message msg;
+        msg.message_id = message_id;
+        msg.sender_id = sender_id;
+        msg.recipient_id = m.member_id;
+        msg.group_id = group_id;
+        msg.plaintext = plaintext_out;
+        msg.ciphertext = ciphertext;
+        msg.timestamp = timestamp;
+        if (!db.add_message(msg)) { 
+            all_online = false; 
+            continue; 
+        }
+
+        std::string server_address = m.server_address;
+        cut_server_address(server_address);
+        if (server_address.empty()) { 
+            all_online = false; 
+            continue; 
+        }
+
+        crow::json::wvalue data_json;
+        data_json["message_id"] = message_id;
+        data_json["group_id"] = group_id;
+        data_json["sender_id"] = sender_id;
+        data_json["recipient_id"] = m.member_id;
+        data_json["ciphertext"] = ciphertext;
+        data_json["timestamp"] = timestamp;
+
+        std::string url = "https://" + server_address + "/accept_message";
+        auto result = send_message(url, data_json.dump());
+
+        bool delivered = result.has_value() && *result == 200;
+        if (delivered) {
+            db.mark_accepted(message_id);
+        } 
+        else {
+            all_online = false;
+        }
+    }
+    return all_online ? std::optional<std::string>(message_id) : std::optional<std::string>(std::nullopt);
+}
+
+bool retry_group_message(db_manager &db, const db_manager::message &msg) {
+    std::string server_address = db.get_contact_address(msg.recipient_id);
+    if (server_address.empty()) return false;
+    cut_server_address(server_address);
+
+    crow::json::wvalue data_json;
+    data_json["message_id"] = msg.message_id;
+    data_json["group_id"] = msg.group_id;
+    data_json["sender_id"] = msg.sender_id;
+    data_json["recipient_id"] = msg.recipient_id;
+    data_json["ciphertext"] = msg.ciphertext;
+    data_json["timestamp"] = msg.timestamp;
+
+    std::string url = "https://" + server_address + "/accept_message";
+    auto result = send_message(url, data_json.dump());
+
+    bool delivered = result.has_value() && *result == 200;
+    if (delivered) {
+        db.mark_accepted(msg.message_id);
+    }
+    return delivered;
+}
