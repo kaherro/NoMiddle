@@ -361,10 +361,15 @@ int main(int argc, char* argv[]) {
             return crow::response(400, crow::json::wvalue{{"error", "Failed to decrypt message"}});
         }
         std::string message_id = data_json["message_id"].s();
+        std::string group_id;
+        if (data_json.has("group_id") && data_json["group_id"].t() == crow::json::type::String) {
+            group_id = data_json["group_id"].s();
+        }
         db_manager::message msg{
             message_id,
             sender_id,
             recipient_id,
+            group_id,
             plaintext.value(),
             ciphertext,
             true,

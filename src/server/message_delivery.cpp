@@ -41,7 +41,7 @@ std::optional<std::string> deliver_message(db_manager &db, const std::string &se
     const std::string &ciphertext, const std::string &plaintext, int64_t timestamp) {
 
     std::string message_id = generate_uuid();
-    db_manager::message msg{message_id, sender_id, recipient_id, plaintext, ciphertext, false, timestamp, 0, 0, 1, 0};
+    db_manager::message msg{message_id, sender_id, recipient_id, "", plaintext, ciphertext, false, timestamp, 0, 0, 1, 0};
     if(!db.add_message(msg)) {
         return std::nullopt;
     }

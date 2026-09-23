@@ -18,6 +18,7 @@ public:
         std::string message_id; // UUID
         std::string sender_id;
         std::string recipient_id;
+        std::string group_id; // "" for direct messages
         std::string plaintext;
         std::string ciphertext; 
         int accepted;
@@ -26,6 +27,21 @@ public:
         int edit_accepted;
         int delete_accepted; // 1 if delete delivered, 0 if pending, 2 if failed
         int64_t deleted_at; // 0 if never deleted
+    };
+
+    struct group_member {
+        std::string group_id;
+        std::string member_id; // public_key
+        std::string server_address;
+        std::string role; // "admin" | "member"
+        int64_t added_at;
+    };
+
+    struct group {
+        std::string group_id;
+        std::string name;
+        std::string created_by;
+        int64_t created_at;
     };
 
     bool upsert_contact(const std::string &contact_id, const std::string &name, const std::string &server_address);
@@ -45,6 +61,14 @@ public:
     std::vector<message> get_pending_messages();
     std::vector<message> get_pending_edits();
     std::vector<message> get_pending_deletes();
+
+    bool create_group(const group &g);
+    bool update_group_name(const std::string &group_id, const std::string &name);
+    bool get_group(const std::string &group_id, group &out);
+    void delete_group(const std::string &group_id);
+    bool replace_group_members(const std::string &group_id, const std::vector<group_member> &members);
+    std::vector<group_member> get_group_members(const std::string &group_id);
+    std::vector<message> get_messages_for_group(const std::string &group_id);
 
     struct contact_info {
         std::string contact_id;
