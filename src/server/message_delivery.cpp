@@ -177,3 +177,61 @@ bool retry_message_delete(db_manager &db, const db_manager::message &msg) {
     }
     return delivered;
 }
+
+bool deliver_group_update(db_manager &db, const std::string &group_id,
+    const std::string &sender_id, const std::vector<db_manager::group_member> &members, int64_t version) {
+    // Build a full, self-contained membership snapshot. Since we replace the whole
+    // local member list on arrival, this is idempotent: the latest version always wins.
+    crow::json::wvalue snap;
+    snap["group_id"]  = group_id;
+    snap["sender_id"] = sender_id;
+    snap["version"]   = version;
+    std::vector<crow::json::wvalue> ml;
+    for (const auto &m : members) {
+        crow::json::wvalue e;
+        e["member_id"]      = m.member_id;
+        e["server_address"] = m.server_address;
+        e["role"]           = m.role;
+        e["added_at"]       = m.added_at;
+        ml.push_back(std::move(e));
+    }
+    snap["members"] = std::move(ml);
+    std::string snapshot_json = snap.dump();
+
+    bool all_online = true;
+    for (const auto &m : members) {
+        if (m.member_id == sender_id) continue; // no self-delivery needed
+        db_manager::group_update u;
+        u.group_id      = group_id;
+        u.member_id     = m.member_id;
+        u.snapshot_json = snapshot_json;
+        u.version       = version;
+        db.upsert_group_update(u);
+
+        std::string addr = m.server_address;
+        cut_server_address(addr);
+        if (addr.empty()) { all_online = false; continue; }
+
+        std::string url = "https://" + addr + "/accept_group_update";
+        auto res = send_message(url, snapshot_json);
+        bool ok = res.has_value() && *res == 200;
+        if (ok) {
+            db.mark_group_update_accepted(group_id, m.member_id);
+        } else {
+            all_online = false;
+        }
+    }
+    return all_online;
+}
+
+bool retry_group_update(db_manager &db, const db_manager::group_update &u) {
+    std::string addr = db.get_contact_address(u.member_id);
+    if (addr.empty()) return false;
+    cut_server_address(addr);
+
+    std::string url = "https://" + addr + "/accept_group_update";
+    auto res = send_message(url, u.snapshot_json);
+    bool ok = res.has_value() && *res == 200;
+    if (ok) db.mark_group_update_accepted(u.group_id, u.member_id);
+    return ok;
+}

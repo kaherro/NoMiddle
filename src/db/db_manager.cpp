@@ -76,6 +76,19 @@ void db_manager::init_schema() {
             approved_client_id TEXT,
             approved_secret  TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS group_updates (
+            group_id       TEXT NOT NULL,
+            member_id      TEXT NOT NULL,
+            snapshot_json  TEXT NOT NULL, 
+            version        INTEGER NOT NULL DEFAULT 0,
+            accepted       INTEGER NOT NULL DEFAULT 0, -- 0 pending, 1 accepted
+            created_at     INTEGER NOT NULL DEFAULT (unixepoch()),
+            PRIMARY KEY (group_id, member_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_group_updates_pending
+            ON group_updates(accepted);
     )";
 
     char *errMsg = nullptr;
@@ -838,4 +851,64 @@ std::vector<db_manager::message> db_manager::get_messages_for_group(const std::s
     }
     sqlite3_finalize(stmt);
     return result;
+}
+void db_manager::upsert_group_update(const group_update &u) {
+    const char *sql =
+        "INSERT INTO group_updates (group_id, member_id, snapshot_json, version, accepted, created_at) "
+        "VALUES (?, ?, ?, ?, 0, unixepoch()) "
+        "ON CONFLICT(group_id, member_id) DO UPDATE SET "
+        "  snapshot_json = excluded.snapshot_json,"
+        "  version = excluded.version,"
+        "  accepted = 0;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare group update upsert: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return;
+    }
+    sqlite3_bind_text(stmt, 1, u.group_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, u.member_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, u.snapshot_json.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 4, u.version);
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        std::cerr << "[SQL] Group update upsert failed: " << sqlite3_errmsg(db_.get()) << std::endl;
+    }
+    sqlite3_finalize(stmt);
+}
+
+std::vector<db_manager::group_update> db_manager::get_pending_group_updates() {
+    std::vector<group_update> result;
+    const char *sql = "SELECT group_id, member_id, snapshot_json, version, accepted, created_at "
+                    "FROM group_updates WHERE accepted = 0 ORDER BY created_at;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare pending group updates: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return result;
+    }
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        group_update u;
+        u.group_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        u.member_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        u.snapshot_json = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        u.version = sqlite3_column_int64(stmt, 3);
+        u.accepted = sqlite3_column_int(stmt, 4);
+        u.created_at = sqlite3_column_int64(stmt, 5);
+        result.push_back(std::move(u));
+    }
+    sqlite3_finalize(stmt);
+    return result;
+}
+
+void db_manager::mark_group_update_accepted(const std::string &group_id, const std::string &member_id) {
+    const char *sql = "UPDATE group_updates SET accepted = 1 WHERE group_id = ? AND member_id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare group update accept: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return;
+    }
+    sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, member_id.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        std::cerr << "[SQL] Group update accept failed: " << sqlite3_errmsg(db_.get()) << std::endl;
+    }
+    sqlite3_finalize(stmt);
 }

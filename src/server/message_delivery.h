@@ -19,3 +19,8 @@ bool deliver_message_delete(db_manager &db, const std::string &message_id,
     const std::string &sender_id, const std::string &recipient_id);
 
 bool retry_message_delete(db_manager &db, const db_manager::message &msg);
+
+bool deliver_group_update(db_manager &db, const std::string &group_id,
+    const std::string &sender_id, const std::vector<db_manager::group_member> &members, int64_t version);
+
+bool retry_group_update(db_manager &db, const db_manager::group_update &u);

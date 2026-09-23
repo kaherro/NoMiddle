@@ -66,6 +66,18 @@ public:
     bool update_group_name(const std::string &group_id, const std::string &name);
     bool get_group(const std::string &group_id, group &out);
     void delete_group(const std::string &group_id);
+
+    struct group_update { 
+        std::string group_id;
+        std::string member_id;
+        std::string snapshot_json;
+        int64_t version;
+        int accepted; // 0 pending, 1 accepted
+        int64_t created_at;
+    };
+    void upsert_group_update(const group_update &u);
+    std::vector<group_update> get_pending_group_updates();
+    void mark_group_update_accepted(const std::string &group_id, const std::string &member_id);
     bool replace_group_members(const std::string &group_id, const std::vector<group_member> &members);
     std::vector<group_member> get_group_members(const std::string &group_id);
     std::vector<message> get_messages_for_group(const std::string &group_id);
