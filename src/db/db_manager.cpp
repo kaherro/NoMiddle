@@ -686,6 +686,26 @@ bool db_manager::approve_auth_request(const std::string &request_id,
     return ok;
 }
 
+std::vector<db_manager::group> db_manager::get_groups() {
+    std::vector<group> result;
+    const char *sql = "SELECT group_id, name, created_by, created_at FROM groups ORDER BY created_at DESC;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare groups list: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return result;
+    }
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        group g;
+        g.group_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        g.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        g.created_by = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        g.created_at = sqlite3_column_int64(stmt, 3);
+        result.push_back(std::move(g));
+    }
+    sqlite3_finalize(stmt);
+    return result;
+}
+
 bool db_manager::create_group(const group &g) {
     const char *sql = "INSERT INTO groups (group_id, name, created_by, created_at) "
         "VALUES (?, ?, ?, ?);";

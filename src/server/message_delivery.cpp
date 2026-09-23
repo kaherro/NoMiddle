@@ -121,11 +121,11 @@ bool retry_message_edit(db_manager &db, const db_manager::message &msg) {
     cut_server_address(server_address);
 
     crow::json::wvalue data_json;
-    data_json["message_id"]   = msg.message_id;
-    data_json["sender_id"]    = msg.sender_id;
+    data_json["message_id"] = msg.message_id;
+    data_json["sender_id"] = msg.sender_id;
     data_json["recipient_id"] = msg.recipient_id;
-    data_json["ciphertext"]   = msg.ciphertext;
-    data_json["edited_at"]    = msg.edited_at;
+    data_json["ciphertext"] = msg.ciphertext;
+    data_json["edited_at"] = msg.edited_at;
 
     std::string url = "https://" + server_address + "/accept_edit";
     auto result = send_message(url, data_json.dump());
@@ -144,8 +144,8 @@ bool deliver_message_delete(db_manager &db, const std::string &message_id,
     cut_server_address(server_address);
 
     crow::json::wvalue data_json;
-    data_json["message_id"]   = message_id;
-    data_json["sender_id"]    = sender_id;
+    data_json["message_id"] = message_id;
+    data_json["sender_id"] = sender_id;
     data_json["recipient_id"] = recipient_id;
 
     std::string url = "https://" + server_address + "/accept_delete";
@@ -164,8 +164,8 @@ bool retry_message_delete(db_manager &db, const db_manager::message &msg) {
     cut_server_address(server_address);
 
     crow::json::wvalue data_json;
-    data_json["message_id"]   = msg.message_id;
-    data_json["sender_id"]    = msg.sender_id;
+    data_json["message_id"] = msg.message_id;
+    data_json["sender_id"] = msg.sender_id;
     data_json["recipient_id"] = msg.recipient_id;
 
     std::string url = "https://" + server_address + "/accept_delete";
@@ -180,19 +180,17 @@ bool retry_message_delete(db_manager &db, const db_manager::message &msg) {
 
 bool deliver_group_update(db_manager &db, const std::string &group_id,
     const std::string &sender_id, const std::vector<db_manager::group_member> &members, int64_t version) {
-    // Build a full, self-contained membership snapshot. Since we replace the whole
-    // local member list on arrival, this is idempotent: the latest version always wins.
     crow::json::wvalue snap;
-    snap["group_id"]  = group_id;
+    snap["group_id"] = group_id;
     snap["sender_id"] = sender_id;
-    snap["version"]   = version;
+    snap["version"] = version;
     std::vector<crow::json::wvalue> ml;
     for (const auto &m : members) {
         crow::json::wvalue e;
-        e["member_id"]      = m.member_id;
+        e["member_id"] = m.member_id;
         e["server_address"] = m.server_address;
-        e["role"]           = m.role;
-        e["added_at"]       = m.added_at;
+        e["role"] = m.role;
+        e["added_at"] = m.added_at;
         ml.push_back(std::move(e));
     }
     snap["members"] = std::move(ml);
@@ -200,12 +198,12 @@ bool deliver_group_update(db_manager &db, const std::string &group_id,
 
     bool all_online = true;
     for (const auto &m : members) {
-        if (m.member_id == sender_id) continue; // no self-delivery needed
+        if (m.member_id == sender_id) continue;
         db_manager::group_update u;
-        u.group_id      = group_id;
-        u.member_id     = m.member_id;
+        u.group_id = group_id;
+        u.member_id = m.member_id;
         u.snapshot_json = snapshot_json;
-        u.version       = version;
+        u.version = version;
         db.upsert_group_update(u);
 
         std::string addr = m.server_address;

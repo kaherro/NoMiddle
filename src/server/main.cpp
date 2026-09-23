@@ -509,7 +509,170 @@ int main(int argc, char* argv[]) {
         return crow::response(200, result);
     });
 
-    CROW_ROUTE(app, "/api/public_key").methods(crow::HTTPMethod::GET)
+    CROW_ROUTE(app, "/api/groups/create").methods(crow::HTTPMethod::POST)
+    ([&db, &self_public_key, &is_authed](const crow::request &req) {
+        if (!is_authed(req)) return crow::response(401, crow::json::wvalue{{"error", "Unauthorized"}});
+        auto data_json = crow::json::load(req.body);
+        if (!data_json || !data_json.has("name")) {
+            return crow::response(400, crow::json::wvalue{{"error", "Invalid JSON or missing name"}});
+        }
+        std::string group_id = generate_uuid();
+        db_manager::group g;
+        g.group_id = group_id;
+        g.name = data_json["name"].s();
+        g.created_by = self_public_key;
+        g.created_at = static_cast<int64_t>(std::time(nullptr));
+        if (!db.create_group(g)) {
+            return crow::response(500, crow::json::wvalue{{"error", "Failed to create group"}});
+        }
+        std::vector<db_manager::group_member> members;
+        db_manager::group_member me;
+        me.group_id = group_id;
+        me.member_id = self_public_key;
+        me.server_address = "";
+        me.role = "admin";
+        me.added_at = static_cast<int64_t>(std::time(nullptr));
+        members.push_back(me);
+        if (!db.replace_group_members(group_id, members)) {
+            return crow::response(500, crow::json::wvalue{{"error", "Failed to register admin member"}});
+        }
+        crow::json::wvalue result;
+        result["group_id"] = group_id;
+        return crow::response(200, result);
+    });
+
+    CROW_ROUTE(app, "/api/groups/<string>/add_member").methods(crow::HTTPMethod::POST)
+    ([&db, &self_public_key, &is_authed](const crow::request &req, const std::string &group_id) {
+        if (!is_authed(req)) return crow::response(401, crow::json::wvalue{{"error", "Unauthorized"}});
+        auto data_json = crow::json::load(req.body);
+        if (!data_json || !data_json.has("member_id") || !data_json.has("server_address")) {
+            return crow::response(400, crow::json::wvalue{{"error", "Invalid JSON or missing member info"}});
+        }
+        std::string member_id = data_json["member_id"].s();
+        std::string server_address = data_json["server_address"].s();
+
+        auto existing = db.get_group_members(group_id);
+        bool found = false;
+        for (auto &m : existing) {
+            if (m.member_id == member_id) { m.server_address = server_address; found = true; break; }
+        }
+        if (!found) {
+            db_manager::group_member nm;
+            nm.group_id = group_id;
+            nm.member_id = member_id;
+            nm.server_address = server_address;
+            nm.role = "member";
+            nm.added_at = static_cast<int64_t>(std::time(nullptr));
+            existing.push_back(nm);
+        }
+        if (!db.replace_group_members(group_id, existing)) {
+            return crow::response(500, crow::json::wvalue{{"error", "Failed to update membership"}});
+        }
+        int64_t version = static_cast<int64_t>(std::time(nullptr));
+        bool delivered = deliver_group_update(db, group_id, self_public_key, existing, version);
+        crow::json::wvalue result;
+        result["delivered"] = delivered;
+        return crow::response(200, result);
+    });
+
+    CROW_ROUTE(app, "/api/groups/<string>/remove_member").methods(crow::HTTPMethod::POST)
+    ([&db, &self_public_key, &is_authed](const crow::request &req, const std::string &group_id) {
+        if (!is_authed(req)) return crow::response(401, crow::json::wvalue{{"error", "Unauthorized"}});
+        auto data_json = crow::json::load(req.body);
+        if (!data_json || !data_json.has("member_id")) {
+            return crow::response(400, crow::json::wvalue{{"error", "Invalid JSON or missing member_id"}});
+        }
+        std::string member_id = data_json["member_id"].s();
+        auto existing = db.get_group_members(group_id);
+        std::vector<db_manager::group_member> remaining;
+        for (const auto &m : existing) {
+            if (m.member_id != member_id) remaining.push_back(m);
+        }
+        if (remaining.size() == existing.size()) {
+            return crow::response(404, crow::json::wvalue{{"error", "Member not in group"}});
+        }
+        if (!db.replace_group_members(group_id, remaining)) {
+            return crow::response(500, crow::json::wvalue{{"error", "Failed to update membership"}});
+        }
+        int64_t version = static_cast<int64_t>(std::time(nullptr));
+        bool delivered = deliver_group_update(db, group_id, self_public_key, remaining, version);
+        if (delivered && remaining.empty()) {
+            db.delete_group(group_id);
+        }
+        crow::json::wvalue result;
+        result["delivered"] = delivered;
+        return crow::response(200, result);
+    });
+
+    CROW_ROUTE(app, "/api/groups").methods(crow::HTTPMethod::GET)
+    ([&db, &is_authed](const crow::request &req) {
+        if (!is_authed(req)) return crow::response(401, crow::json::wvalue{{"error", "Unauthorized"}});
+        auto groups = db.get_groups();
+        crow::json::wvalue result;
+        std::vector<crow::json::wvalue> arr;
+        for (const auto &g : groups) {
+            crow::json::wvalue e;
+            e["group_id"] = g.group_id;
+            e["name"] = g.name;
+            e["created_by"] = g.created_by;
+            e["created_at"] = g.created_at;
+            arr.push_back(std::move(e));
+        }
+        result["groups"] = std::move(arr);
+        return crow::response(200, result);
+    });
+
+    CROW_ROUTE(app, "/api/groups/<string>/members").methods(crow::HTTPMethod::GET)
+    ([&db, &is_authed](const crow::request &req, const std::string &group_id) {
+        if (!is_authed(req)) return crow::response(401, crow::json::wvalue{{"error", "Unauthorized"}});
+        auto members = db.get_group_members(group_id);
+        crow::json::wvalue result;
+        std::vector<crow::json::wvalue> arr;
+        for (const auto &m : members) {
+            crow::json::wvalue e;
+            e["member_id"] = m.member_id;
+            e["server_address"] = m.server_address;
+            e["role"] = m.role;
+            arr.push_back(std::move(e));
+        }
+        result["members"] = std::move(arr);
+        return crow::response(200, result);
+    });
+
+    CROW_ROUTE(app, "/accept_group_update").methods(crow::HTTPMethod::POST)
+    ([&db](const crow::request &req) {
+        auto data_json = crow::json::load(req.body);
+        if (!data_json || !data_json.has("group_id") || !data_json.has("members")) {
+            return crow::response(400, crow::json::wvalue{{"error", "Invalid snapshot"}});
+        }
+        std::string group_id = data_json["group_id"].s();
+        std::string sender_id;
+        if (data_json.has("sender_id")) sender_id = data_json["sender_id"].s();
+        db_manager::group g;
+        if (!db.get_group(group_id, g)) {
+            db_manager::group ng;
+            ng.group_id = group_id;
+            ng.name = data_json.has("name") ? data_json["name"].s() : group_id;
+            ng.created_by = sender_id;
+            ng.created_at = static_cast<int64_t>(std::time(nullptr));
+            db.create_group(ng);
+        }
+        std::vector<db_manager::group_member> members;
+        for (const auto &e : data_json["members"]) {
+            db_manager::group_member m;
+            m.group_id = group_id;
+            m.member_id = e["member_id"].s();
+            m.server_address = e["server_address"].s();
+            m.role = e["role"].s();
+            members.push_back(m);
+        }
+        if (!db.replace_group_members(group_id, members)) {
+            return crow::response(500, crow::json::wvalue{{"error", "Failed to store snapshot"}});
+        }
+        return crow::response(200);
+    });
+
+CROW_ROUTE(app, "/api/public_key").methods(crow::HTTPMethod::GET)
     ([&self_public_key](const crow::request &req) {
         crow::json::wvalue result;
         result["public_key"] = self_public_key;

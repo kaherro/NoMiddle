@@ -65,6 +65,7 @@ public:
     bool create_group(const group &g);
     bool update_group_name(const std::string &group_id, const std::string &name);
     bool get_group(const std::string &group_id, group &out);
+    std::vector<group> get_groups();
     void delete_group(const std::string &group_id);
 
     struct group_update { 
