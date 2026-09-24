@@ -133,7 +133,7 @@ bool retry_message_edit(db_manager &db, const db_manager::message &msg) {
 
     bool delivered = result.has_value() && *result == 200;
     if (delivered) {
-        db.mark_edit_accepted(msg.message_id);
+        db.mark_edit_accepted(msg.message_id, msg.recipient_id);
     }
     return delivered;
 }
@@ -174,7 +174,7 @@ bool retry_message_delete(db_manager &db, const db_manager::message &msg) {
 
     bool delivered = result.has_value() && *result == 200;
     if (delivered) {
-        db.mark_delete_accepted(msg.message_id);
+        db.mark_delete_accepted(msg.message_id, msg.recipient_id);
     }
     return delivered;
 }

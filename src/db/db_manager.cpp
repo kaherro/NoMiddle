@@ -233,6 +233,21 @@ void db_manager::mark_delete_accepted(const std::string &message_id) {
     sqlite3_finalize(stmt);
 }
 
+void db_manager::mark_delete_accepted(const std::string &message_id, const std::string &recipient_id) {
+    const char *sql = "UPDATE messages SET delete_accepted = 1 WHERE message_id = ? AND recipient_id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare delete accept update: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return;
+    }
+    sqlite3_bind_text(stmt, 1, message_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, recipient_id.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        std::cerr << "[SQL] Update failed: " << sqlite3_errmsg(db_.get()) << std::endl;
+    }
+    sqlite3_finalize(stmt);
+}
+
 void db_manager::mark_delete_failed(const std::string &message_id) {
     const char *sql = "UPDATE messages SET delete_accepted = 2 WHERE message_id = ?;";
     sqlite3_stmt* stmt = nullptr;
@@ -255,6 +270,21 @@ void db_manager::mark_edit_accepted(const std::string &message_id) {
         return;
     }
     sqlite3_bind_text(stmt, 1, message_id.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        std::cerr << "[SQL] Update failed: " << sqlite3_errmsg(db_.get()) << std::endl;
+    }
+    sqlite3_finalize(stmt);
+}
+
+void db_manager::mark_edit_accepted(const std::string &message_id, const std::string &recipient_id) {
+    const char *sql = "UPDATE messages SET edit_accepted = 1 WHERE message_id = ? AND recipient_id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare edit update: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return;
+    }
+    sqlite3_bind_text(stmt, 1, message_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, recipient_id.c_str(), -1, SQLITE_TRANSIENT);
     if (sqlite3_step(stmt) != SQLITE_DONE) {
         std::cerr << "[SQL] Update failed: " << sqlite3_errmsg(db_.get()) << std::endl;
     }
@@ -317,6 +347,27 @@ bool db_manager::update_message_edit(const std::string &message_id, const std::s
     sqlite3_bind_text(stmt, 2, ciphertext.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt, 3, edited_at);
     sqlite3_bind_text(stmt, 4, message_id.c_str(), -1, SQLITE_TRANSIENT);
+    bool ok = (sqlite3_step(stmt) == SQLITE_DONE);
+    if (!ok) {
+        std::cerr << "[SQL] Message edit failed: " << sqlite3_errmsg(db_.get()) << std::endl;
+    }
+    sqlite3_finalize(stmt);
+    return ok;
+}
+
+bool db_manager::update_message_edit_for(const std::string &message_id, const std::string &recipient_id,
+                                        const std::string &plaintext, const std::string &ciphertext, int64_t edited_at) {
+    const char *sql = "UPDATE messages SET plaintext = ?, ciphertext = ?, edited_at = ?, edit_accepted = 0 WHERE message_id = ? AND recipient_id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare message edit: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, plaintext.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, ciphertext.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 3, edited_at);
+    sqlite3_bind_text(stmt, 4, message_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 5, recipient_id.c_str(), -1, SQLITE_TRANSIENT);
     bool ok = (sqlite3_step(stmt) == SQLITE_DONE);
     if (!ok) {
         std::cerr << "[SQL] Message edit failed: " << sqlite3_errmsg(db_.get()) << std::endl;

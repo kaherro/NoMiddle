@@ -51,12 +51,16 @@ public:
     void mark_deleted(const std::string &message_id);
     void mark_delete_pending(const std::string &message_id);
     void mark_delete_accepted(const std::string &message_id);
+    void mark_delete_accepted(const std::string &message_id, const std::string &recipient_id);
     void mark_delete_failed(const std::string &message_id);
     void mark_edit_accepted(const std::string &message_id);
+    void mark_edit_accepted(const std::string &message_id, const std::string &recipient_id);
     void mark_edit_failed(const std::string &message_id);
     bool get_message(const std::string &message_id, message &out);
     bool update_message_edit(const std::string &message_id, const std::string &plaintext,
                             const std::string &ciphertext, int64_t edited_at);
+    bool update_message_edit_for(const std::string &message_id, const std::string &recipient_id,
+                            const std::string &plaintext, const std::string &ciphertext, int64_t edited_at);
     std::string get_contact_address(const std::string& contact_id);
     std::vector<message> get_pending_messages();
     std::vector<message> get_pending_edits();

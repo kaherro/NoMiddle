@@ -513,7 +513,8 @@
 
     async function editMessage(messageId, text) {
         try {
-            const resp = await apiFetch(api.editMessage, {
+            const isGroup = !!selectedGroupId;
+            const resp = await apiFetch(isGroup ? `/api/groups/${selectedGroupId}/edit_message` : api.editMessage, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -523,8 +524,13 @@
             });
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             cancelEditing();
-            await fetchAndRenderMessages();
-            refreshContacts();
+            if (isGroup) {
+                await fetchAndRenderGroupMessages();
+                refreshGroups();
+            } else {
+                await fetchAndRenderMessages();
+                refreshContacts();
+            }
         }
         catch (err) {
             console.error('Failed to edit message:', err);
@@ -545,21 +551,28 @@
         editBarEl.style.display = 'flex';
         messageInputEl.focus();
         messageInputEl.setSelectionRange(messageInputEl.value.length, messageInputEl.value.length);
-        fetchAndRenderMessages().then(() => {
+        const refresh = selectedGroupId ? fetchAndRenderGroupMessages : fetchAndRenderMessages;
+        refresh().then(() => {
             messagesListEl.scrollTop = messagesListEl.scrollHeight;
         });
     }
 
     async function deleteMessage(messageId) {
         try {
-            const resp = await apiFetch(api.deleteMessage, {
+            const isGroup = !!selectedGroupId;
+            const resp = await apiFetch(isGroup ? `/api/groups/${selectedGroupId}/delete_message` : api.deleteMessage, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ message_id: messageId })
             });
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-            await fetchAndRenderMessages();
-            refreshContacts();
+            if (isGroup) {
+                await fetchAndRenderGroupMessages();
+                refreshGroups();
+            } else {
+                await fetchAndRenderMessages();
+                refreshContacts();
+            }
         }
         catch (err) {
             console.error('Failed to delete message:', err);
@@ -686,6 +699,10 @@
                 metaRow.appendChild(statusDiv);
             }
             messageDiv.appendChild(metaRow);
+            messageDiv.addEventListener('contextmenu', e => {
+                e.preventDefault();
+                showContextMenu(e.clientX, e.clientY, m);
+            });
             listEl.appendChild(messageDiv);
         });
         listEl.scrollTop = listEl.scrollHeight;
@@ -1068,14 +1085,28 @@
                     }
                 } 
                 else if (data.type === 'edit_message') {
-                    if (selectedContactId && data.contact_id === selectedContactId) {
-                        fetchAndRenderMessages();
+                    if (data.group_id) {
+                        if (selectedGroupId && data.group_id === selectedGroupId) {
+                            fetchAndRenderGroupMessages();
+                        }
+                        refreshGroups();
+                    } else {
+                        if (selectedContactId && data.contact_id === selectedContactId) {
+                            fetchAndRenderMessages();
+                        }
                     }
                     refreshContacts();
                 }
                 else if (data.type === 'delete_message') {
-                    if (selectedContactId && data.contact_id === selectedContactId) {
-                        fetchAndRenderMessages();
+                    if (data.group_id) {
+                        if (selectedGroupId && data.group_id === selectedGroupId) {
+                            fetchAndRenderGroupMessages();
+                        }
+                        refreshGroups();
+                    } else {
+                        if (selectedContactId && data.contact_id === selectedContactId) {
+                            fetchAndRenderMessages();
+                        }
                     }
                     refreshContacts();
                 }

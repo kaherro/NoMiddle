@@ -133,11 +133,12 @@ int main(int argc, char* argv[]) {
         }
     };
 
-    auto notify_edit_message = [&ws_mutex, &ws_clients](const std::string &message_id, const std::string &other_party_id) {
+    auto notify_edit_message = [&ws_mutex, &ws_clients](const std::string &message_id, const std::string &other_party_id, const std::string &group_id = "") {
         crow::json::wvalue payload;
         payload["type"]       = "edit_message";
         payload["message_id"] = message_id;
         payload["contact_id"] = other_party_id; 
+        payload["group_id"]   = group_id;
         std::string data = payload.dump();
 
         std::lock_guard<std::mutex> lock(ws_mutex);
@@ -146,11 +147,12 @@ int main(int argc, char* argv[]) {
         }
     };
 
-    auto notify_delete_message = [&ws_mutex, &ws_clients](const std::string &message_id, const std::string &other_party_id) {
+    auto notify_delete_message = [&ws_mutex, &ws_clients](const std::string &message_id, const std::string &other_party_id, const std::string &group_id = "") {
         crow::json::wvalue payload;
         payload["type"]       = "delete_message";
         payload["message_id"] = message_id;
         payload["contact_id"] = other_party_id; 
+        payload["group_id"]   = group_id;
         std::string data = payload.dump();
 
         std::lock_guard<std::mutex> lock(ws_mutex);
@@ -304,7 +306,7 @@ int main(int argc, char* argv[]) {
             return crow::response(500, crow::json::wvalue{{"error", "Failed to update message"}});
         }
         deliver_message_edit(db, message_id, self_public_key, msg.recipient_id, *ciphertext, edited_at);
-        notify_edit_message(message_id, msg.recipient_id);
+        notify_edit_message(message_id, msg.recipient_id, msg.group_id);
         crow::json::wvalue res;
         res["message_id"] = message_id;
         res["plaintext"] = plaintext;
@@ -335,7 +337,7 @@ int main(int argc, char* argv[]) {
         db.mark_deleted(message_id);
         db.mark_delete_pending(message_id);
         deliver_message_delete(db, message_id, self_public_key, msg.recipient_id);
-        notify_delete_message(message_id, msg.recipient_id);
+        notify_delete_message(message_id, msg.recipient_id, msg.group_id);
         crow::json::wvalue res;
         res["message_id"] = message_id;
         return crow::response(200, res);
@@ -417,7 +419,7 @@ int main(int argc, char* argv[]) {
             return crow::response(500, crow::json::wvalue{{"error", "Failed to update message"}});
         }
         db.mark_edit_accepted(message_id);
-        notify_edit_message(message_id, sender_id);
+        notify_edit_message(message_id, sender_id, msg.group_id);
         return crow::response(200);
     });
     
@@ -444,7 +446,7 @@ int main(int argc, char* argv[]) {
             return crow::response(400, crow::json::wvalue{{"error", "Sender does not match message"}});
         }
         db.mark_deleted(message_id);
-        notify_delete_message(message_id, sender_id);
+        notify_delete_message(message_id, sender_id, msg.group_id);
         return crow::response(200);
     });
     
@@ -738,6 +740,102 @@ int main(int argc, char* argv[]) {
         }
         out["messages"] = std::move(arr);
         return crow::response(200, out);
+    });
+
+    CROW_ROUTE(app, "/api/groups/<string>/edit_message").methods(crow::HTTPMethod::POST)
+    ([&db, &self_public_key, &is_authed, &keys, &notify_edit_message](const crow::request &req, const std::string &group_id) {
+        if (!is_authed(req)) return crow::response(401, crow::json::wvalue{{"error", "Unauthorized"}});
+        auto data_json = crow::json::load(req.body);
+        if (!data_json || !data_json.has("message_id") || !data_json.has("text")) {
+            return crow::response(400, crow::json::wvalue{{"error", "Invalid JSON or missing message_id/text"}});
+        }
+        std::string message_id = data_json["message_id"].s();
+        std::string plaintext = data_json["text"].s();
+        db_manager::message msg;
+        if (!db.get_message(message_id, msg)) {
+            return crow::response(404, crow::json::wvalue{{"error", "Unknown message"}});
+        }
+        if (msg.group_id != group_id) {
+            return crow::response(404, crow::json::wvalue{{"error", "Message not in this group"}});
+        }
+        if (msg.sender_id != self_public_key) {
+            return crow::response(403, crow::json::wvalue{{"error", "Cannot edit message sent by someone else"}});
+        }
+        std::vector<db_manager::group_member> members = db.get_group_members(group_id);
+        if (members.empty()) {
+            return crow::response(404, crow::json::wvalue{{"error", "Group not found"}});
+        }
+        int64_t edited_at = static_cast<int64_t>(std::time(nullptr));
+        for (const auto &m : members) {
+            if (m.member_id == self_public_key) continue;
+            auto ciphertext = encrypt_message(plaintext, m.member_id, keys->private_key_b64);
+            if (!ciphertext) continue;
+            db.update_message_edit_for(message_id, m.member_id, plaintext, *ciphertext, edited_at);
+            std::string server_address = m.server_address;
+            cut_server_address(server_address);
+            if (server_address.empty()) {
+                server_address = db.get_contact_address(m.member_id);
+                cut_server_address(server_address);
+            }
+            if (server_address.empty()) continue;
+            std::string url = "https://" + server_address + "/accept_edit";
+            auto result = send_message(url, crow::json::wvalue{{"message_id", message_id},
+                {"sender_id", self_public_key}, {"recipient_id", m.member_id},
+                {"group_id", group_id}, {"ciphertext", *ciphertext}, {"edited_at", edited_at}}.dump());
+            if (result.has_value() && *result == 200) {
+                db.mark_edit_accepted(message_id, m.member_id);
+            }
+        }
+        notify_edit_message(message_id, "", group_id);
+        crow::json::wvalue res;
+        res["message_id"] = message_id;
+        res["plaintext"] = plaintext;
+        res["edited_at"] = edited_at;
+        return crow::response(200, res);
+    });
+
+    CROW_ROUTE(app, "/api/groups/<string>/delete_message").methods(crow::HTTPMethod::POST)
+    ([&db, &self_public_key, &is_authed, &notify_delete_message](const crow::request &req, const std::string &group_id) {
+        if (!is_authed(req)) return crow::response(401, crow::json::wvalue{{"error", "Unauthorized"}});
+        auto data_json = crow::json::load(req.body);
+        if (!data_json || !data_json.has("message_id")) {
+            return crow::response(400, crow::json::wvalue{{"error", "Missing message_id"}});
+        }
+        std::string message_id = data_json["message_id"].s();
+        db_manager::message msg;
+        if (!db.get_message(message_id, msg)) {
+            return crow::response(404, crow::json::wvalue{{"error", "Unknown message"}});
+        }
+        if (msg.group_id != group_id) {
+            return crow::response(404, crow::json::wvalue{{"error", "Message not in this group"}});
+        }
+        if (msg.sender_id != self_public_key) {
+            return crow::response(403, crow::json::wvalue{{"error", "Cannot delete message sent by someone else"}});
+        }
+        db.mark_deleted(message_id);
+        db.mark_delete_pending(message_id);
+        std::vector<db_manager::group_member> members = db.get_group_members(group_id);
+        for (const auto &m : members) {
+            if (m.member_id == self_public_key) continue;
+            std::string server_address = m.server_address;
+            cut_server_address(server_address);
+            if (server_address.empty()) {
+                server_address = db.get_contact_address(m.member_id);
+                cut_server_address(server_address);
+            }
+            if (server_address.empty()) continue;
+            std::string url = "https://" + server_address + "/accept_delete";
+            auto result = send_message(url, crow::json::wvalue{{"message_id", message_id},
+                {"sender_id", self_public_key}, {"recipient_id", m.member_id},
+                {"group_id", group_id}}.dump());
+            if (result.has_value() && *result == 200) {
+                db.mark_delete_accepted(message_id, m.member_id);
+            }
+        }
+        notify_delete_message(message_id, "", group_id);
+        crow::json::wvalue res;
+        res["message_id"] = message_id;
+        return crow::response(200, res);
     });
 
     CROW_ROUTE(app, "/accept_group_update").methods(crow::HTTPMethod::POST)
