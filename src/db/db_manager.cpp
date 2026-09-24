@@ -162,14 +162,15 @@ bool db_manager::add_message(const message &msg) {
     return ok;
 }
 
-void db_manager::mark_accepted(const std::string &message_id) {
-    const char *sql = "UPDATE messages SET accepted = 1 WHERE message_id = ?;";
+void db_manager::mark_accepted(const std::string &message_id, const std::string &recipient_id) {
+    const char *sql = "UPDATE messages SET accepted = 1 WHERE message_id = ? AND recipient_id = ?;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
         std::cerr << "[SQL] Failed to prepare update: " << sqlite3_errmsg(db_.get()) << std::endl;
         return;
     }
     sqlite3_bind_text(stmt, 1, message_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, recipient_id.c_str(), -1, SQLITE_TRANSIENT);
     if (sqlite3_step(stmt) != SQLITE_DONE) {
         std::cerr << "[SQL] Update failed: " << sqlite3_errmsg(db_.get()) << std::endl;
     }

@@ -526,11 +526,15 @@ int main(int argc, char* argv[]) {
         if (!db.create_group(g)) {
             return crow::response(500, crow::json::wvalue{{"error", "Failed to create group"}});
         }
+        std::string self_address;
+        if (data_json.has("server_address") && data_json["server_address"].t() == crow::json::type::String) {
+            self_address = data_json["server_address"].s();
+        }
         std::vector<db_manager::group_member> members;
         db_manager::group_member me;
         me.group_id = group_id;
         me.member_id = self_public_key;
-        me.server_address = "";
+        me.server_address = self_address;
         me.role = "admin";
         me.added_at = static_cast<int64_t>(std::time(nullptr));
         members.push_back(me);
@@ -553,6 +557,12 @@ int main(int argc, char* argv[]) {
         std::string server_address = data_json["server_address"].s();
 
         auto existing = db.get_group_members(group_id);
+        if (data_json.has("self_server_address") && data_json["self_server_address"].t() == crow::json::type::String) {
+            std::string self_address = data_json["self_server_address"].s();
+            for (auto &m : existing) {
+                if (m.member_id == self_public_key) { m.server_address = self_address; break; }
+            }
+        }
         bool found = false;
         for (auto &m : existing) {
             if (m.member_id == member_id) { m.server_address = server_address; found = true; break; }
@@ -659,11 +669,12 @@ int main(int argc, char* argv[]) {
         bool all_online = true;
         for (const auto &m : members) {
             if (m.member_id == self_public_key) continue; 
+
             std::string server_address = m.server_address;
             cut_server_address(server_address);
-            if (server_address.empty()) { 
-                all_online = false; 
-                continue; 
+            if (server_address.empty()) {
+                server_address = db.get_contact_address(m.member_id);
+                cut_server_address(server_address);
             }
 
             auto ciphertext = encrypt_message(text, m.member_id, keys->private_key_b64);
@@ -685,12 +696,17 @@ int main(int argc, char* argv[]) {
                 continue; 
             }
 
+            if (server_address.empty()) { 
+                all_online = false; 
+                continue; 
+            }
+
             std::string url = "https://" + server_address + "/accept_message";
             auto result = send_message(url, crow::json::wvalue{{"message_id", message_id},
                 {"sender_id", self_public_key}, {"recipient_id", m.member_id},
                 {"group_id", group_id}, {"ciphertext", *ciphertext}, {"timestamp", timestamp}}.dump());
             if (result.has_value() && *result == 200) {
-                db.mark_accepted(message_id);
+                db.mark_accepted(message_id, m.member_id);
             } 
             else {
                 all_online = false;

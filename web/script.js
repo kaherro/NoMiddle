@@ -943,7 +943,7 @@
             const res = await apiFetch('/api/groups/create', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name })
+                body: JSON.stringify({ name, server_address: window.location.host })
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
@@ -954,7 +954,8 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         member_id: contact.contact_id,
-                        server_address: contact.server_address || ''
+                        server_address: contact.server_address || '',
+                        self_server_address: window.location.host
                     })
                 });
             }

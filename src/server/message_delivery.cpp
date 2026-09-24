@@ -60,7 +60,7 @@ std::optional<std::string> deliver_message(db_manager &db, const std::string &se
     auto result = send_message(url, data_json.dump());
 
     if (result.has_value() && *result == 200) {
-        db.mark_accepted(message_id);
+        db.mark_accepted(message_id, recipient_id);
         return message_id;
     } 
     else {
@@ -101,6 +101,7 @@ bool retry_deliver_message(db_manager &db, const db_manager::message &msg) {
     data_json["message_id"] = msg.message_id;
     data_json["sender_id"] = msg.sender_id;
     data_json["recipient_id"] = msg.recipient_id;
+    data_json["group_id"] = msg.group_id;
     // data_json["plaintext"] = msg.plaintext;
     data_json["ciphertext"] = msg.ciphertext;
     data_json["timestamp"] = msg.timestamp;
@@ -110,7 +111,7 @@ bool retry_deliver_message(db_manager &db, const db_manager::message &msg) {
 
     bool delivered = result.has_value() && *result == 200;
     if (delivered) {
-        db.mark_accepted(msg.message_id);
+        db.mark_accepted(msg.message_id, msg.recipient_id);
     }
     return delivered;
 }
@@ -281,7 +282,7 @@ std::optional<std::string> deliver_group_message(db_manager &db, const std::stri
 
         bool delivered = result.has_value() && *result == 200;
         if (delivered) {
-            db.mark_accepted(message_id);
+            db.mark_accepted(message_id, m.member_id);
         } 
         else {
             all_online = false;
@@ -308,7 +309,7 @@ bool retry_group_message(db_manager &db, const db_manager::message &msg) {
 
     bool delivered = result.has_value() && *result == 200;
     if (delivered) {
-        db.mark_accepted(msg.message_id);
+        db.mark_accepted(msg.message_id, msg.recipient_id);
     }
     return delivered;
 }
