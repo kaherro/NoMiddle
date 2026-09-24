@@ -32,32 +32,16 @@
         </div>
         <div id="contacts">
             <div id="contacts-header">
-                <div id="contacts-label">Contacts</div>
+                <div id="contacts-label">Chats</div>
                 <div id="add-contact">
                     <button id="add-contact-button">+</button>
-                </div>
-            </div>
-            <div id="groups-header">
-                <div id="groups-label">Groups</div>
-                <div id="create-group">
-                    <button id="create-group-button">+</button>
-                </div>
-            </div>
-            <div id="groups-list"></div>
-            <div id="contacts-list">
-                <div class="contact">
-                    <div>
-                        <div class="contact-name">Bob</div>
-                        <div class="latest-message">Latest message was 3 minutes ago</div>
-                    </div>
-                </div>
-                <div class="contact">
-                    <div>
-                        <div class="contact-name">Alice</div>
-                        <div class="latest-message">Latest message was 5 minutes ago</div>
+                    <div id="add-contact-menu" style="display:none;">
+                        <div class="add-contact-menu-item" data-action="contact">Add contact</div>
+                        <div class="add-contact-menu-item" data-action="group">Create group</div>
                     </div>
                 </div>
             </div>
+            <div id="contacts-list"></div>
         </div>
     </div>
     <div id="right-column">

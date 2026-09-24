@@ -417,6 +417,7 @@
             });
             contactsListEl.appendChild(contactDiv);
         });
+        refreshGroups();
     }
 
     function formatClockTime(timestamp) {
@@ -675,9 +676,7 @@
 
     function refreshGroups() {
         apiFetch('/api/groups').then(res => res.ok ? res.json() : []).then(groups => {
-            const listEl = document.getElementById('groups-list');
-            if (!listEl) return;
-            listEl.innerHTML = '';
+            contactsListEl.querySelectorAll('.group-row').forEach(r => r.remove());
             (groups.groups || groups || []).forEach(g => {
                 const row = document.createElement('div');
                 row.className = 'group-row';
@@ -686,7 +685,7 @@
                 name.textContent = g.name || g.group_id;
                 const count = document.createElement('span');
                 count.className = 'group-count';
-                count.textContent = (g.member_count || '') ;
+                count.textContent = (g.member_count || '');
                 row.appendChild(name);
                 row.appendChild(count);
                 row.onclick = () => {
@@ -698,7 +697,7 @@
                     chatSettingsBtn.style.display = 'none';
                     fetchAndRenderGroupMessages();
                 };
-                listEl.appendChild(row);
+                contactsListEl.appendChild(row);
                 if (selectedGroupId && g.group_id === selectedGroupId) {
                     row.className += ' selected';
                 }
@@ -782,12 +781,10 @@
     });
     editBarCancelBtn.addEventListener('click', cancelEditing);
 
-    addContactBtnEl.addEventListener('click', () => {
-        addContactOverlayEl.style.display = 'flex';
-        addContactWindowEl.style.display = 'block';
-        addContactNameInput.value = '';
-        addContactIpInput.value = '';
-        addContactNameInput.focus();
+    addContactBtnEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const menuEl = document.getElementById('add-contact-menu');
+        menuEl.style.display = menuEl.style.display === 'flex' ? 'none' : 'flex';
     });
 
     function hideAddContactModal() {
@@ -798,6 +795,27 @@
     addContactCancelBtn.addEventListener('click', hideAddContactModal);
     addContactOverlayEl.addEventListener('click', e => {
         if (e.target === addContactOverlayEl) hideAddContactModal();
+    });
+
+    document.querySelectorAll('.add-contact-menu-item').forEach(item => {
+        item.addEventListener('click', () => {
+            document.getElementById('add-contact-menu').style.display = 'none';
+            if (item.dataset.action === 'contact') {
+                addContactOverlayEl.style.display = 'flex';
+                addContactWindowEl.style.display = 'block';
+                addContactNameInput.value = '';
+                addContactIpInput.value = '';
+                addContactNameInput.focus();
+            } 
+            else {
+                openCreateGroupOverlay();
+            }
+        });
+    });
+
+    document.addEventListener('click', () => {
+        const menuEl = document.getElementById('add-contact-menu');
+        if (menuEl) menuEl.style.display = 'none';
     });
 
     addContactConfirmBtn.addEventListener('click', async () => {
@@ -856,7 +874,6 @@
         delete settingsWindowEl.dataset.editingContactId;
     }
 
-    const createGroupBtn = document.getElementById('create-group-button');
     const createGroupOverlayEl = document.getElementById('create-group-overlay');
     const createGroupWindowEl = document.getElementById('create-group-window');
     const createGroupConfirmBtn = document.getElementById('create-group-confirm');
@@ -906,7 +923,6 @@
         createGroupOverlayEl.style.display = 'none';
         createGroupWindowEl.style.display = 'none';
     }
-    createGroupBtn.addEventListener('click', openCreateGroupOverlay);
     createGroupCancelBtn.addEventListener('click', closeCreateGroupOverlay);
     createGroupConfirmBtn.addEventListener('click', async () => {
         const name = createGroupNameInput.value.trim();
@@ -1068,7 +1084,6 @@
         await fetchSelfPublicKey();
         const contacts = await fetchContacts();
         renderContacts(contacts);
-        refreshGroups();
         const savedContactId = localStorage.getItem('selectedContactId');
         const startContact = contacts.find(c => c.contact_id === savedContactId);
         if (startContact) {
