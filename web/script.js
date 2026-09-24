@@ -431,6 +431,21 @@
         return `${hh}:${mm}`;
     }
 
+    function formatMessageTime(timestamp) {
+        if (!timestamp) return '';
+        const d = new Date(timestamp * 1000);
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const startOfMsgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        const dayDiff = Math.round((startOfToday - startOfMsgDay) / 86400000);
+        if (dayDiff <= 0) return formatClockTime(timestamp);
+        if (dayDiff === 1) return 'yesterday';
+        if (d.getFullYear() === now.getFullYear()) {
+            return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        }
+        return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+
     function selectContact(contactId, contactName) {
         selectedContactId = contactId;
         localStorage.setItem('selectedContactId', contactId);
@@ -681,7 +696,7 @@
             if (!isMine) {
                 metaRow.appendChild(el('span', 'message-sender', m.sender_name || m.sender_id.substr(0, 8)));
             }
-            metaRow.appendChild(el('span', 'message-time', new Date(m.timestamp * 1000).toLocaleTimeString()));
+            metaRow.appendChild(el('span', 'message-time', formatMessageTime(m.timestamp)));
             if (m.edited_at) {
                 metaRow.appendChild(el('span', 'message-edited', 'edited'));
             }
