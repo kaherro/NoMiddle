@@ -731,14 +731,19 @@ int main(int argc, char* argv[]) {
         std::string group_id = data_json["group_id"].s();
         std::string sender_id;
         if (data_json.has("sender_id")) sender_id = data_json["sender_id"].s();
+        std::string group_name;
+        if (data_json.has("name")) group_name = data_json["name"].s();
         db_manager::group g;
         if (!db.get_group(group_id, g)) {
             db_manager::group ng;
             ng.group_id = group_id;
-            ng.name = data_json.has("name") ? data_json["name"].s() : group_id;
+            ng.name = group_name.empty() ? group_id : group_name;
             ng.created_by = sender_id;
             ng.created_at = static_cast<int64_t>(std::time(nullptr));
             db.create_group(ng);
+        } 
+        else if (!group_name.empty() && g.name != group_name) {
+            db.update_group_name(group_id, group_name);
         }
         std::vector<db_manager::group_member> members;
         for (const auto &e : data_json["members"]) {

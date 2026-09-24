@@ -184,6 +184,10 @@ bool deliver_group_update(db_manager &db, const std::string &group_id,
     snap["group_id"] = group_id;
     snap["sender_id"] = sender_id;
     snap["version"] = version;
+    db_manager::group grp;
+    if (db.get_group(group_id, grp)) {
+        snap["name"] = grp.name;
+    }
     std::vector<crow::json::wvalue> ml;
     for (const auto &m : members) {
         crow::json::wvalue e;
