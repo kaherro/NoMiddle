@@ -731,7 +731,9 @@ int main(int argc, char* argv[]) {
             e["sender_id"] = m.sender_id;
             e["group_id"] = m.group_id;
             e["plaintext"] = m.plaintext;
+            e["accepted"] = m.accepted;
             e["timestamp"] = m.timestamp;
+            e["edited_at"] = m.edited_at;
             arr.push_back(std::move(e));
         }
         out["messages"] = std::move(arr);

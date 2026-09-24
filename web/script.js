@@ -654,25 +654,39 @@
         if (!listEl) return;
         listEl.innerHTML = '';
         const msgs = Array.isArray(messages) ? messages : (messages.messages || []);
+        const seen = new Set();
         msgs.forEach(m => {
-            const row = document.createElement('div');
-            row.className = 'message-row ' + (m.sender_id === selfPublicKey ? 'sent' : 'received');
-            const meta = document.createElement('div');
-            meta.className = 'message-meta';
-            const sender = document.createElement('span');
-            sender.className = 'message-sender';
-            sender.textContent = m.sender_id === selfPublicKey ? 'You' : (m.sender_name || m.sender_id.substr(0, 8));
-            const time = document.createElement('span');
-            time.className = 'message-time';
-            time.textContent = new Date(m.timestamp * 1000).toLocaleTimeString();
-            meta.appendChild(sender);
-            meta.appendChild(time);
-            const text = document.createElement('div');
-            text.className = 'message-text';
-            text.textContent = m.plaintext || '[decrypted]';
-            row.appendChild(meta);
-            row.appendChild(text);
-            listEl.appendChild(row);
+            if (m.accepted === 3) return;
+            if (seen.has(m.message_id)) return;
+            seen.add(m.message_id);
+            const messageDiv = el('div', 'message');
+            const isMine = m.sender_id === selfPublicKey;
+            if (isMine) messageDiv.classList.add('mine');
+            else messageDiv.classList.add('theirs');
+            messageDiv.appendChild(el('div', 'message-text', m.plaintext || '[decrypted]'));
+            const metaRow = el('div', 'message-meta');
+            if (!isMine) {
+                metaRow.appendChild(el('span', 'message-sender', m.sender_name || m.sender_id.substr(0, 8)));
+            }
+            metaRow.appendChild(el('span', 'message-time', new Date(m.timestamp * 1000).toLocaleTimeString()));
+            if (m.edited_at) {
+                metaRow.appendChild(el('span', 'message-edited', 'edited'));
+            }
+            if (isMine) {
+                const statusDiv = el('div', 'message-status');
+                if (m.accepted === 1) {
+                    statusDiv.textContent = '✓';
+                }
+                else if (m.accepted === 2) {
+                    statusDiv.textContent = '✗';
+                }
+                else {
+                    statusDiv.textContent = '⏳';
+                }
+                metaRow.appendChild(statusDiv);
+            }
+            messageDiv.appendChild(metaRow);
+            listEl.appendChild(messageDiv);
         });
         listEl.scrollTop = listEl.scrollHeight;
     }
