@@ -181,6 +181,7 @@
 
     let selfPublicKey = null;
     let selectedContactId = null;
+    let selectedGroupId = null;
     let lastContacts = [];
     let pendingSelfMessageId = null;
     let editingMessage = null;
@@ -635,6 +636,76 @@
     document.addEventListener('scroll', hideContextMenu, true);
     window.addEventListener('resize', hideContextMenu);
 
+    async function fetchAndRenderGroupMessages() {
+        if (!selectedGroupId) return;
+        const res = await apiFetch(`/api/groups/${selectedGroupId}/messages`);
+        if (res.ok) {
+            const data = await res.json();
+            renderGroupMessages(data.messages || data || []);
+        }
+    }
+
+    function renderGroupMessages(messages) {
+        const listEl = document.getElementById('messages-list');
+        if (!listEl) return;
+        listEl.innerHTML = '';
+        const msgs = Array.isArray(messages) ? messages : (messages.messages || []);
+        msgs.forEach(m => {
+            const row = document.createElement('div');
+            row.className = 'message-row ' + (m.sender_id === selfPublicKey ? 'sent' : 'received');
+            const meta = document.createElement('div');
+            meta.className = 'message-meta';
+            const sender = document.createElement('span');
+            sender.className = 'message-sender';
+            sender.textContent = m.sender_id === selfPublicKey ? 'You' : (m.sender_name || m.sender_id.substr(0, 8));
+            const time = document.createElement('span');
+            time.className = 'message-time';
+            time.textContent = new Date(m.timestamp * 1000).toLocaleTimeString();
+            meta.appendChild(sender);
+            meta.appendChild(time);
+            const text = document.createElement('div');
+            text.className = 'message-text';
+            text.textContent = m.plaintext || '[decrypted]';
+            row.appendChild(meta);
+            row.appendChild(text);
+            listEl.appendChild(row);
+        });
+        listEl.scrollTop = listEl.scrollHeight;
+    }
+
+    function refreshGroups() {
+        apiFetch('/api/groups').then(res => res.ok ? res.json() : []).then(groups => {
+            const listEl = document.getElementById('groups-list');
+            if (!listEl) return;
+            listEl.innerHTML = '';
+            (groups.groups || groups || []).forEach(g => {
+                const row = document.createElement('div');
+                row.className = 'group-row';
+                const name = document.createElement('span');
+                name.className = 'group-name';
+                name.textContent = g.name || g.group_id;
+                const count = document.createElement('span');
+                count.className = 'group-count';
+                count.textContent = (g.member_count || '') ;
+                row.appendChild(name);
+                row.appendChild(count);
+                row.onclick = () => {
+                    selectedGroupId = g.group_id;
+                    selectedContactId = null;
+                    document.getElementById('contact-name-text').textContent = g.name || g.group_id;
+                    chatHeaderEl.style.display = '';
+                    messageFieldEl.style.display = '';
+                    chatSettingsBtn.style.display = 'none';
+                    fetchAndRenderGroupMessages();
+                };
+                listEl.appendChild(row);
+                if (selectedGroupId && g.group_id === selectedGroupId) {
+                    row.className += ' selected';
+                }
+            });
+        });
+    }
+
     async function fetchAndRenderMessages() {
         const messages = await fetchMessages();
         renderMessages(messages);
@@ -645,16 +716,17 @@
     }
 
     async function sendMessage(text) {
-        if (!selectedContactId) {
-            alert('Please select a contact first');
+        if (!selectedContactId && !selectedGroupId) {
+            alert('Please select a contact or group first');
             return;
         }
         if (!text.trim()) return;
         try {
-            const resp = await apiFetch(api.sendMessage, {
+            const isGroup = !!selectedGroupId;
+            const resp = await apiFetch(isGroup ? `/api/groups/${selectedGroupId}/messages` : api.sendMessage, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+                body: JSON.stringify(isGroup ? { text } : {
                     recipient_id: selectedContactId,
                     text: text
                 })
@@ -662,7 +734,12 @@
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             const data = await resp.json();
             pendingSelfMessageId = data.message_id;
-            await fetchAndRenderMessages();
+            if (isGroup) {
+                await fetchAndRenderGroupMessages();
+            } 
+            else {
+                await fetchAndRenderMessages();
+            }
             messageInputEl.value = '';
         } 
         catch (err) {
@@ -779,9 +856,91 @@
         delete settingsWindowEl.dataset.editingContactId;
     }
 
-    settingsCancelBtn.addEventListener('click', hideSettingsModal);
-    settingsOverlayEl.addEventListener('click', e => {
-        if (e.target === settingsOverlayEl) hideSettingsModal();
+    const createGroupBtn = document.getElementById('create-group-button');
+    const createGroupOverlayEl = document.getElementById('create-group-overlay');
+    const createGroupWindowEl = document.getElementById('create-group-window');
+    const createGroupConfirmBtn = document.getElementById('create-group-confirm');
+    const createGroupCancelBtn = document.getElementById('create-group-cancel');
+    const createGroupNameInput = document.getElementById('create-group-name');
+    const createGroupMembersList = document.getElementById('create-group-members-list');
+    let selectedCreateGroupMembers = new Set();
+
+    function renderCreateGroupMemberList(contacts) {
+        createGroupMembersList.innerHTML = '';
+        if (!contacts.length) {
+            createGroupMembersList.innerHTML = '<div class="create-group-members-empty">No contacts yet</div>';
+            return;
+        }
+        contacts.forEach(c => {
+            const row = el('div', 'create-group-member-row');
+            const checked = selectedCreateGroupMembers.has(c.contact_id);
+            row.classList.toggle('selected', checked);
+            const checkbox = el('span', 'create-group-member-check', checked ? '✓' : '');
+            const name = el('span', 'create-group-member-name', c.name || '(no name)');
+            row.appendChild(checkbox);
+            row.appendChild(name);
+            row.addEventListener('click', () => {
+                if (selectedCreateGroupMembers.has(c.contact_id)) {
+                    selectedCreateGroupMembers.delete(c.contact_id);
+                    checkbox.textContent = '';
+                } 
+                else {
+                    selectedCreateGroupMembers.add(c.contact_id);
+                    checkbox.textContent = '✓';
+                }
+                row.classList.toggle('selected', selectedCreateGroupMembers.has(c.contact_id));
+            });
+            createGroupMembersList.appendChild(row);
+        });
+    }
+
+    function openCreateGroupOverlay() {
+        selectedCreateGroupMembers = new Set();
+        createGroupNameInput.value = '';
+        createGroupMembersList.innerHTML = '';
+        fetchContacts().then(renderCreateGroupMemberList);
+        createGroupOverlayEl.style.display = 'flex';
+        createGroupWindowEl.style.display = 'block';
+    }
+    function closeCreateGroupOverlay() {
+        createGroupOverlayEl.style.display = 'none';
+        createGroupWindowEl.style.display = 'none';
+    }
+    createGroupBtn.addEventListener('click', openCreateGroupOverlay);
+    createGroupCancelBtn.addEventListener('click', closeCreateGroupOverlay);
+    createGroupConfirmBtn.addEventListener('click', async () => {
+        const name = createGroupNameInput.value.trim();
+        if (!name) return;
+        const contacts = await fetchContacts();
+        const selectedContacts = contacts.filter(c => selectedCreateGroupMembers.has(c.contact_id));
+        closeCreateGroupOverlay();
+        try {
+            const res = await apiFetch('/api/groups/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            const groupId = data.group_id;
+            for (const contact of selectedContacts) {
+                await apiFetch(`/api/groups/${groupId}/add_member`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        member_id: contact.contact_id,
+                        server_address: contact.server_address || ''
+                    })
+                });
+            }
+            createGroupNameInput.value = '';
+            selectedCreateGroupMembers = new Set();
+            refreshGroups();
+        } 
+        catch (err) {
+            console.error('Failed to create group:', err);
+            alert('Failed to create group');
+        }
     });
 
     settingsConfirmBtn.addEventListener('click', async () => {
@@ -851,15 +1010,22 @@
             try {
                 const data = JSON.parse(event.data);
                 if (data.type === 'new_message') {
-                    if (pendingSelfMessageId && data.message_id === pendingSelfMessageId) {
-                        pendingSelfMessageId = null;
-                    } 
-                    else {
-                        if (selectedContactId && data.contact_id === selectedContactId) {
-                            fetchAndRenderMessages();
+                    if (data.group_id) {
+                        if (selectedGroupId && data.group_id === selectedGroupId) {
+                            fetchAndRenderGroupMessages();
                         }
+                        refreshGroups();
+                    } else {
+                        if (pendingSelfMessageId && data.message_id === pendingSelfMessageId) {
+                            pendingSelfMessageId = null;
+                        } 
+                        else {
+                            if (selectedContactId && data.contact_id === selectedContactId) {
+                                fetchAndRenderMessages();
+                            }
+                        }
+                        refreshContacts();
                     }
-                    refreshContacts();
                 } 
                 else if (data.type === 'edit_message') {
                     if (selectedContactId && data.contact_id === selectedContactId) {
@@ -902,6 +1068,7 @@
         await fetchSelfPublicKey();
         const contacts = await fetchContacts();
         renderContacts(contacts);
+        refreshGroups();
         const savedContactId = localStorage.getItem('selectedContactId');
         const startContact = contacts.find(c => c.contact_id === savedContactId);
         if (startContact) {

@@ -119,11 +119,12 @@ int main(int argc, char* argv[]) {
         }
     };
 
-    auto notify_new_message = [&ws_mutex, &ws_clients](const std::string &message_id, const std::string &other_party_id) {
+    auto notify_new_message = [&ws_mutex, &ws_clients](const std::string &message_id, const std::string &other_party_id, const std::string &group_id = "") {
         crow::json::wvalue payload;
         payload["type"]       = "new_message";
         payload["message_id"] = message_id;
         payload["contact_id"] = other_party_id; 
+        payload["group_id"]   = group_id;
         std::string data = payload.dump();
 
         std::lock_guard<std::mutex> lock(ws_mutex);
@@ -382,7 +383,7 @@ int main(int argc, char* argv[]) {
         if (!db.add_message(msg)) {
             return crow::response(500, crow::json::wvalue{{"error", "Failed to store message"}});
         }
-        notify_new_message(message_id, sender_id);
+        notify_new_message(message_id, sender_id, group_id);
         return crow::response(200);
     });
     

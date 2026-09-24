@@ -156,6 +156,92 @@ body {
     letter-spacing: 0.06em;
     color: #8b93a3;
 }
+#groups-header {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 8px;
+}
+#groups-label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #8b93a3;
+}
+#create-group {
+    display: flex;
+    align-items: center;
+}
+#create-group-button {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    margin: 0;
+    box-sizing: border-box;
+    border-radius: 6px;
+    background: #232834;
+    border: 1px solid #2a2f3a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #e7e9ee;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+}
+#create-group-button:hover {
+    background: #2a2f3acb;
+}
+#groups-list {
+    max-height: 200px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+#groups-list::-webkit-scrollbar {
+    width: 6px;
+}
+#groups-list::-webkit-scrollbar-thumb {
+    background: #2a2f3a;
+    border-radius: 3px;
+}
+#groups-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+.group-row {
+    position: relative;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 6px;
+    width: 100%;
+    box-sizing: border-box;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: background-color 0.15s ease;
+}
+.group-row:hover {
+    background: #232834;
+}
+.group-row.selected {
+    background: #2b3140;
+}
+.group-name {
+    display: block;
+    color: #e7e9ee;
+    font-weight: 500;
+    font-size: 15px;
+}
+.group-count {
+    display: block;
+    font-size: 13px;
+    color: #8b93a3;
+    white-space: nowrap;
+}
 .contact {
     position: relative;
     padding: 8px 10px;
@@ -449,7 +535,7 @@ body {
     z-index: 1000; 
     display: none;
 }
-#add-contact-window, #settings-window, #approval-window, #devices-window {
+#add-contact-window, #settings-window, #approval-window, #devices-window, #create-group-window {
     position: fixed;
     top: 50%;
     left: 50%;
@@ -461,7 +547,7 @@ body {
     width: 320px;
     display: none;
 }
-#add-contact-header, #settings-header, #approval-header, #devices-header {
+#add-contact-header, #settings-header, #approval-header, #devices-header, #create-group-header {
     font-size: 15px;
     font-weight: bold;
     margin-bottom: 10px;
@@ -567,7 +653,8 @@ body {
     outline: none;
 }
 #add-contact-confirm, #add-contact-cancel, #settings-confirm, #settings-cancel,
-#approval-approve-btn, #approval-reject-btn, #devices-close {
+#approval-approve-btn, #approval-reject-btn, #devices-close,
+#create-group-confirm, #create-group-cancel {
     padding: 8px 12px;
     border: 1px solid #2a2f3a;
     border-radius: 6px;
@@ -578,8 +665,86 @@ body {
     margin-right: 8px;
 }
 #add-contact-confirm:hover, #add-contact-cancel:hover, #settings-confirm:hover, #settings-cancel:hover,
-#approval-approve-btn:hover, #approval-reject-btn:hover, #devices-close:hover {
+#approval-approve-btn:hover, #approval-reject-btn:hover, #devices-close:hover,
+#create-group-confirm:hover, #create-group-cancel:hover {
     background-color: #4e6b55;
+}
+#create-group-name {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px;
+    border: 1px solid #2a2f3a;
+    border-radius: 6px;
+    background-color: #232834;
+    color: #e7e9ee;
+    font-size: 14px;
+    margin-bottom: 10px;
+    outline: none;
+}
+#create-group-members-label {
+    color: #8b93a3;
+    font-size: 13px;
+    margin-bottom: 6px;
+}
+#create-group-members-list {
+    max-height: 160px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    margin-bottom: 10px;
+    border: 1px solid #2a2f3a;
+    border-radius: 6px;
+    background: #232834;
+}
+#create-group-members-list::-webkit-scrollbar {
+    width: 6px;
+}
+#create-group-members-list::-webkit-scrollbar-thumb {
+    background: #2a2f3a;
+    border-radius: 3px;
+}
+#create-group-members-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+.create-group-member-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.15s ease;
+}
+.create-group-member-row:hover {
+    background: #2a2f3a;
+}
+.create-group-member-row.selected {
+    background: #2b3140;
+}
+.create-group-member-check {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+    box-sizing: border-box;
+    border: 1px solid #3a4152;
+    border-radius: 4px;
+    background: #1b1f27;
+    color: #4fd1ae;
+    font-size: 12px;
+    line-height: 18px;
+    text-align: center;
+}
+.create-group-member-name {
+    color: #e7e9ee;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.create-group-members-empty {
+    color: #8b93a3;
+    font-size: 13px;
+    padding: 8px 10px;
 }
 #lock-screen {
     position: fixed;
