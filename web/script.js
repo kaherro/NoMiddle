@@ -724,7 +724,7 @@
                 latestDiv.className = 'latest-message';
                 if (g.last_message) {
                     const isSelf = g.last_message_sender_id === selfPublicKey;
-                    const senderLabel = isSelf ? 'You' : (g.last_message_sender_id || '').slice(0, 8);
+                    const senderLabel = isSelf ? 'You' : (g.last_message_sender_name || (g.last_message_sender_id || '').slice(0, 8));
                     latestDiv.textContent = `${senderLabel}: ${g.last_message}`;
                     const timeSpan = document.createElement('span');
                     timeSpan.className = 'latest-message-time';

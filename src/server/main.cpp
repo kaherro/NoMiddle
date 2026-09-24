@@ -633,6 +633,7 @@ int main(int argc, char* argv[]) {
             if (db.get_last_message_for_group(g.group_id, last)) {
                 e["last_message"] = last.plaintext;
                 e["last_message_sender_id"] = last.sender_id;
+                e["last_message_sender_name"] = db.get_contact_name(last.sender_id);
                 e["last_message_timestamp"] = last.timestamp;
             }
             arr.push_back(std::move(e));
@@ -737,6 +738,7 @@ int main(int argc, char* argv[]) {
             crow::json::wvalue e;
             e["message_id"] = m.message_id;
             e["sender_id"] = m.sender_id;
+            e["sender_name"] = db.get_contact_name(m.sender_id);
             e["group_id"] = m.group_id;
             e["plaintext"] = m.plaintext;
             e["accepted"] = m.accepted;

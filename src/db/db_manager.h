@@ -62,6 +62,7 @@ public:
     bool update_message_edit_for(const std::string &message_id, const std::string &recipient_id,
                             const std::string &plaintext, const std::string &ciphertext, int64_t edited_at);
     std::string get_contact_address(const std::string& contact_id);
+    std::string get_contact_name(const std::string& contact_id);
     std::vector<message> get_pending_messages();
     std::vector<message> get_pending_edits();
     std::vector<message> get_pending_deletes();

@@ -395,6 +395,25 @@ std::string db_manager::get_contact_address(const std::string& contact_id) {
     return address;
 }
 
+std::string db_manager::get_contact_name(const std::string& contact_id) {
+    const char *sql = "SELECT name FROM contacts WHERE contact_id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    std::string name = "";
+
+    if(sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare select: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return name;
+    }
+    sqlite3_bind_text(stmt, 1, contact_id.c_str(), -1, SQLITE_TRANSIENT);
+
+    if(sqlite3_step(stmt) == SQLITE_ROW) {
+        const unsigned char* text = sqlite3_column_text(stmt, 0);
+        if(text) name = reinterpret_cast<const char*>(text);
+    }
+    sqlite3_finalize(stmt);
+    return name;
+}
+
 std::vector<db_manager::message> db_manager::get_pending_messages() {
     const char *sql =
         "SELECT message_id, sender_id, recipient_id, group_id, plaintext, ciphertext, accepted, timestamp, edited_at, edit_accepted, delete_accepted, deleted_at "
