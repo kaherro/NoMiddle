@@ -924,6 +924,38 @@ std::vector<db_manager::message> db_manager::get_messages_for_group(const std::s
     sqlite3_finalize(stmt);
     return result;
 }
+
+bool db_manager::get_last_message_for_group(const std::string &group_id, message &out) {
+    const char *sql =
+        "SELECT message_id, sender_id, recipient_id, group_id, plaintext, ciphertext, accepted, timestamp, edited_at, edit_accepted, delete_accepted, deleted_at "
+        "FROM messages WHERE group_id = ? AND accepted != 3 "
+        "ORDER BY timestamp DESC LIMIT 1;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[SQL] Failed to prepare last group message select: " << sqlite3_errmsg(db_.get()) << std::endl;
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
+    bool found = false;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        out.message_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        out.sender_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        out.recipient_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        out.group_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        out.plaintext = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+        out.ciphertext = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+        out.accepted = sqlite3_column_int(stmt, 6);
+        out.timestamp = sqlite3_column_int64(stmt, 7);
+        out.edited_at = sqlite3_column_int64(stmt, 8);
+        out.edit_accepted = sqlite3_column_int(stmt, 9);
+        out.delete_accepted = sqlite3_column_int(stmt, 10);
+        out.deleted_at = sqlite3_column_int64(stmt, 11);
+        found = true;
+    }
+    sqlite3_finalize(stmt);
+    return found;
+}
+
 void db_manager::upsert_group_update(const group_update &u) {
     const char *sql =
         "INSERT INTO group_updates (group_id, member_id, snapshot_json, version, accepted, created_at) "

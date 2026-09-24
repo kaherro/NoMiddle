@@ -629,6 +629,12 @@ int main(int argc, char* argv[]) {
             e["name"] = g.name;
             e["created_by"] = g.created_by;
             e["created_at"] = g.created_at;
+            db_manager::message last;
+            if (db.get_last_message_for_group(g.group_id, last)) {
+                e["last_message"] = last.plaintext;
+                e["last_message_sender_id"] = last.sender_id;
+                e["last_message_timestamp"] = last.timestamp;
+            }
             arr.push_back(std::move(e));
         }
         result["groups"] = std::move(arr);

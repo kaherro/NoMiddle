@@ -714,14 +714,28 @@
             (groups.groups || groups || []).forEach(g => {
                 const row = document.createElement('div');
                 row.className = 'group-row';
+                const infoDiv = document.createElement('div');
+                infoDiv.style.flex = '1';
+                infoDiv.style.minWidth = '0';
                 const name = document.createElement('span');
                 name.className = 'group-name';
                 name.textContent = g.name || g.group_id;
-                const count = document.createElement('span');
-                count.className = 'group-count';
-                count.textContent = (g.member_count || '');
-                row.appendChild(name);
-                row.appendChild(count);
+                const latestDiv = document.createElement('div');
+                latestDiv.className = 'latest-message';
+                if (g.last_message) {
+                    const isSelf = g.last_message_sender_id === selfPublicKey;
+                    const senderLabel = isSelf ? 'You' : (g.last_message_sender_id || '').slice(0, 8);
+                    latestDiv.textContent = `${senderLabel}: ${g.last_message}`;
+                    const timeSpan = document.createElement('span');
+                    timeSpan.className = 'latest-message-time';
+                    timeSpan.textContent = formatClockTime(g.last_message_timestamp);
+                    row.appendChild(timeSpan);
+                } else {
+                    latestDiv.textContent = 'No messages yet';
+                }
+                infoDiv.appendChild(name);
+                infoDiv.appendChild(latestDiv);
+                row.appendChild(infoDiv);
                 row.onclick = () => {
                     const prevContact = contactsListEl.querySelector('.contact.selected');
                     if (prevContact) prevContact.classList.remove('selected');

@@ -86,6 +86,7 @@ public:
     bool replace_group_members(const std::string &group_id, const std::vector<group_member> &members);
     std::vector<group_member> get_group_members(const std::string &group_id);
     std::vector<message> get_messages_for_group(const std::string &group_id);
+    bool get_last_message_for_group(const std::string &group_id, message &out);
 
     struct contact_info {
         std::string contact_id;
