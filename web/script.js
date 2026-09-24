@@ -410,8 +410,11 @@
             infoDiv.appendChild(latestDiv);
             contactDiv.appendChild(infoDiv);
             contactDiv.addEventListener('click', () => {
-                const prev = contactsListEl.querySelector('.contact.selected');
-                if (prev) prev.classList.remove('selected');
+                const prevContact = contactsListEl.querySelector('.contact.selected');
+                if (prevContact) prevContact.classList.remove('selected');
+                const prevGroup = contactsListEl.querySelector('.group-row.selected');
+                if (prevGroup) prevGroup.classList.remove('selected');
+                selectedGroupId = null;
                 contactDiv.classList.add('selected');
                 selectContact(contact.contact_id, contact.name);
             });
@@ -689,8 +692,14 @@
                 row.appendChild(name);
                 row.appendChild(count);
                 row.onclick = () => {
+                    const prevContact = contactsListEl.querySelector('.contact.selected');
+                    if (prevContact) prevContact.classList.remove('selected');
+                    const prevGroup = contactsListEl.querySelector('.group-row.selected');
+                    if (prevGroup) prevGroup.classList.remove('selected');
                     selectedGroupId = g.group_id;
                     selectedContactId = null;
+                    localStorage.removeItem('selectedContactId');
+                    row.classList.add('selected');
                     document.getElementById('contact-name-text').textContent = g.name || g.group_id;
                     chatHeaderEl.style.display = '';
                     messageFieldEl.style.display = '';
