@@ -396,6 +396,7 @@
             else {
                 latestDiv.textContent = 'No messages yet';
             }
+            contactDiv.dataset.lastTime = (contact.latest_message && contact.latest_message.accepted !== 3 && contact.latest_message.timestamp) ? contact.latest_message.timestamp : '';
             infoDiv.appendChild(nameDiv);
             infoDiv.appendChild(latestDiv);
             contactDiv.appendChild(infoDiv);
@@ -739,6 +740,7 @@
                 } else {
                     latestDiv.textContent = 'No messages yet';
                 }
+                row.dataset.lastTime = g.last_message_timestamp || '';
                 infoDiv.appendChild(name);
                 infoDiv.appendChild(latestDiv);
                 row.appendChild(infoDiv);
@@ -762,7 +764,14 @@
                     row.className += ' selected';
                 }
             });
+            sortChatList();
         });
+    }
+
+    function sortChatList() {
+        const rows = Array.from(contactsListEl.children);
+        rows.sort((a, b) => (Number(b.dataset.lastTime || 0)) - (Number(a.dataset.lastTime || 0)));
+        rows.forEach(r => contactsListEl.appendChild(r));
     }
 
     async function fetchAndRenderMessages() {
