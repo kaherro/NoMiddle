@@ -16,6 +16,20 @@ void start_retrying_worker(db_manager &db, std::atomic<bool> &running) {
         if(pending_edits.empty()) {
             std::cout << "[RETRY_WORKER] No pending edits left\n";
         }
+        std::vector<db_manager::group_update> pending_gu = db.get_pending_group_updates();
+        if(pending_gu.empty()) {
+            std::cout << "[RETRY_WORKER] No pending group updates left\n";
+        }
+        for(auto u : pending_gu) {
+            if(retry_group_update(db, u)) {
+                std::cout << "[RETRY_WORKER] Group update (group " << u.group_id
+                        << " -> " << u.member_id << ") delivered\n";
+            }
+            else {
+                std::cout << "[RETRY_WORKER] Group update (group " << u.group_id
+                        << " -> " << u.member_id << ") is still pending\n";
+            }
+        }
         std::vector<db_manager::message> pending_deletes = db.get_pending_deletes();
         if(pending_deletes.empty()) {
             std::cout << "[RETRY_WORKER] No pending deletes left\n";

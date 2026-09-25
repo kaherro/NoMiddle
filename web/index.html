@@ -32,25 +32,16 @@
         </div>
         <div id="contacts">
             <div id="contacts-header">
-                <div id="contacts-label">Contacts</div>
+                <div id="contacts-label">Chats</div>
                 <div id="add-contact">
                     <button id="add-contact-button">+</button>
-                </div>
-            </div>
-            <div id="contacts-list">
-                <div class="contact">
-                    <div>
-                        <div class="contact-name">Bob</div>
-                        <div class="latest-message">Latest message was 3 minutes ago</div>
-                    </div>
-                </div>
-                <div class="contact">
-                    <div>
-                        <div class="contact-name">Alice</div>
-                        <div class="latest-message">Latest message was 5 minutes ago</div>
+                    <div id="add-contact-menu" style="display:none;">
+                        <div class="add-contact-menu-item" data-action="contact">Add contact</div>
+                        <div class="add-contact-menu-item" data-action="group">Create group</div>
                     </div>
                 </div>
             </div>
+            <div id="contacts-list"></div>
         </div>
     </div>
     <div id="right-column">
@@ -113,19 +104,31 @@
             <button id="devices-close">Close</button>
         </div>
     </div>
+    <div class="modal-overlay" id="create-group-overlay">
+        <div id="create-group-window">
+            <div id="create-group-header">New Group</div>
+            <input type="text" id="create-group-name" placeholder="Group name">
+            <div id="create-group-members-label">Add members (optional)</div>
+            <div id="create-group-members-list"></div>
+            <div id="create-group-buttons">
+                <button id="create-group-confirm">Create</button>
+                <button id="create-group-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <div id="lock-screen">
-    <div id="lock-box">
-        <div id="lock-message"></div>
-        <div id="lock-register">
-            <input type="text" id="lock-device-name" placeholder="Device name">
-            <button id="lock-request-btn">Request access</button>
+        <div id="lock-box">
+            <div id="lock-message"></div>
+            <div id="lock-register">
+                <input type="text" id="lock-device-name" placeholder="Device name">
+                <button id="lock-request-btn">Request access</button>
+            </div>
+            <div id="lock-waiting" style="display:none;"></div>
+            <button id="lock-refresh">Reload</button>
         </div>
-        <div id="lock-waiting" style="display:none;"></div>
-        <button id="lock-refresh">Reload</button>
     </div>
-</div>
 
 <script src="script.js"></script>
 </body>

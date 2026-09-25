@@ -18,6 +18,7 @@ public:
         std::string message_id; // UUID
         std::string sender_id;
         std::string recipient_id;
+        std::string group_id; // "" for direct messages
         std::string plaintext;
         std::string ciphertext; 
         int accepted;
@@ -28,23 +29,65 @@ public:
         int64_t deleted_at; // 0 if never deleted
     };
 
+    struct group_member {
+        std::string group_id;
+        std::string member_id; // public_key
+        std::string server_address;
+        std::string role; // "admin" | "member"
+        int64_t added_at;
+    };
+
+    struct group {
+        std::string group_id;
+        std::string name;
+        std::string created_by;
+        int64_t created_at;
+    };
+
     bool upsert_contact(const std::string &contact_id, const std::string &name, const std::string &server_address);
     bool add_message(const message &msg);
-    void mark_accepted(const std::string &message_id);
+    void mark_accepted(const std::string &message_id, const std::string &recipient_id);
     void mark_failed(const std::string &message_id);
     void mark_deleted(const std::string &message_id);
     void mark_delete_pending(const std::string &message_id);
     void mark_delete_accepted(const std::string &message_id);
+    void mark_delete_accepted(const std::string &message_id, const std::string &recipient_id);
     void mark_delete_failed(const std::string &message_id);
     void mark_edit_accepted(const std::string &message_id);
+    void mark_edit_accepted(const std::string &message_id, const std::string &recipient_id);
     void mark_edit_failed(const std::string &message_id);
     bool get_message(const std::string &message_id, message &out);
     bool update_message_edit(const std::string &message_id, const std::string &plaintext,
                             const std::string &ciphertext, int64_t edited_at);
+    bool update_message_edit_for(const std::string &message_id, const std::string &recipient_id,
+                            const std::string &plaintext, const std::string &ciphertext, int64_t edited_at);
     std::string get_contact_address(const std::string& contact_id);
+    std::string get_contact_name(const std::string& contact_id);
     std::vector<message> get_pending_messages();
     std::vector<message> get_pending_edits();
     std::vector<message> get_pending_deletes();
+
+    bool create_group(const group &g);
+    bool update_group_name(const std::string &group_id, const std::string &name);
+    bool get_group(const std::string &group_id, group &out);
+    std::vector<group> get_groups();
+    void delete_group(const std::string &group_id);
+
+    struct group_update { 
+        std::string group_id;
+        std::string member_id;
+        std::string snapshot_json;
+        int64_t version;
+        int accepted; // 0 pending, 1 accepted
+        int64_t created_at;
+    };
+    void upsert_group_update(const group_update &u);
+    std::vector<group_update> get_pending_group_updates();
+    void mark_group_update_accepted(const std::string &group_id, const std::string &member_id);
+    bool replace_group_members(const std::string &group_id, const std::vector<group_member> &members);
+    std::vector<group_member> get_group_members(const std::string &group_id);
+    std::vector<message> get_messages_for_group(const std::string &group_id);
+    bool get_last_message_for_group(const std::string &group_id, message &out);
 
     struct contact_info {
         std::string contact_id;

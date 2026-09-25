@@ -13,19 +13,7 @@
         editMessage: `${baseUrl}/api/edit_message`,
         deleteMessage: `${baseUrl}/api/delete_message`,
         upsertContact: `${baseUrl}/api/upsert_contact`,
-        fetchRemotePublicKey: (addr) => {
-            let url = addr;
-            if (url.startsWith('http://')) {
-                url = url.substring(7);
-            }
-            else if (url.startsWith('https://')) {
-                url = url.substring(8);
-            }
-            if (url.endsWith('/')) {
-                url = url.slice(0, -1);
-            }
-            return `https://${url}/api/public_key`;
-        }
+        remotePublicKey: `${baseUrl}/api/remote_public_key`,
     };
 
     const AUTH_ID_KEY = 'nmd_client_id';
@@ -181,6 +169,7 @@
 
     let selfPublicKey = null;
     let selectedContactId = null;
+    let selectedGroupId = null;
     let lastContacts = [];
     let pendingSelfMessageId = null;
     let editingMessage = null;
@@ -397,7 +386,9 @@
                     latestDiv.textContent = 'No messages yet';
                 } 
                 else {
-                    latestDiv.textContent = `Latest message: ${msg.plaintext}`;
+                    const isSelf = msg.sender_id === selfPublicKey;
+                    const senderLabel = isSelf ? 'You' : (contact.name || (msg.sender_id || '').slice(0, 8));
+                    latestDiv.textContent = `${senderLabel}: ${msg.plaintext}`;
                     const timeSpan = el('span', 'latest-message-time', formatClockTime(msg.timestamp));
                     contactDiv.appendChild(timeSpan);
                 }
@@ -405,17 +396,22 @@
             else {
                 latestDiv.textContent = 'No messages yet';
             }
+            contactDiv.dataset.lastTime = (contact.latest_message && contact.latest_message.accepted !== 3 && contact.latest_message.timestamp) ? contact.latest_message.timestamp : '';
             infoDiv.appendChild(nameDiv);
             infoDiv.appendChild(latestDiv);
             contactDiv.appendChild(infoDiv);
             contactDiv.addEventListener('click', () => {
-                const prev = contactsListEl.querySelector('.contact.selected');
-                if (prev) prev.classList.remove('selected');
+                const prevContact = contactsListEl.querySelector('.contact.selected');
+                if (prevContact) prevContact.classList.remove('selected');
+                const prevGroup = contactsListEl.querySelector('.group-row.selected');
+                if (prevGroup) prevGroup.classList.remove('selected');
+                selectedGroupId = null;
                 contactDiv.classList.add('selected');
                 selectContact(contact.contact_id, contact.name);
             });
             contactsListEl.appendChild(contactDiv);
         });
+        refreshGroups();
     }
 
     function formatClockTime(timestamp) {
@@ -424,6 +420,21 @@
         const hh = String(d.getHours()).padStart(2, '0');
         const mm = String(d.getMinutes()).padStart(2, '0');
         return `${hh}:${mm}`;
+    }
+
+    function formatMessageTime(timestamp) {
+        if (!timestamp) return '';
+        const d = new Date(timestamp * 1000);
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const startOfMsgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        const dayDiff = Math.round((startOfToday - startOfMsgDay) / 86400000);
+        if (dayDiff <= 0) return formatClockTime(timestamp);
+        if (dayDiff === 1) return 'yesterday';
+        if (d.getFullYear() === now.getFullYear()) {
+            return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        }
+        return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
     }
 
     function selectContact(contactId, contactName) {
@@ -485,6 +496,7 @@
             if (msg.edited_at) {
                 metaRow.appendChild(el('span', 'message-edited', 'edited'));
             }
+            metaRow.appendChild(el('span', 'message-time', formatMessageTime(msg.timestamp)));
             if (isMine) {
                 const statusDiv = el('div', 'message-status');
                 if (msg.accepted === 1) {
@@ -508,7 +520,8 @@
 
     async function editMessage(messageId, text) {
         try {
-            const resp = await apiFetch(api.editMessage, {
+            const isGroup = !!selectedGroupId;
+            const resp = await apiFetch(isGroup ? `/api/groups/${selectedGroupId}/edit_message` : api.editMessage, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -518,8 +531,13 @@
             });
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             cancelEditing();
-            await fetchAndRenderMessages();
-            refreshContacts();
+            if (isGroup) {
+                await fetchAndRenderGroupMessages();
+                refreshGroups();
+            } else {
+                await fetchAndRenderMessages();
+                refreshContacts();
+            }
         }
         catch (err) {
             console.error('Failed to edit message:', err);
@@ -540,21 +558,28 @@
         editBarEl.style.display = 'flex';
         messageInputEl.focus();
         messageInputEl.setSelectionRange(messageInputEl.value.length, messageInputEl.value.length);
-        fetchAndRenderMessages().then(() => {
+        const refresh = selectedGroupId ? fetchAndRenderGroupMessages : fetchAndRenderMessages;
+        refresh().then(() => {
             messagesListEl.scrollTop = messagesListEl.scrollHeight;
         });
     }
 
     async function deleteMessage(messageId) {
         try {
-            const resp = await apiFetch(api.deleteMessage, {
+            const isGroup = !!selectedGroupId;
+            const resp = await apiFetch(isGroup ? `/api/groups/${selectedGroupId}/delete_message` : api.deleteMessage, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ message_id: messageId })
             });
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-            await fetchAndRenderMessages();
-            refreshContacts();
+            if (isGroup) {
+                await fetchAndRenderGroupMessages();
+                refreshGroups();
+            } else {
+                await fetchAndRenderMessages();
+                refreshContacts();
+            }
         }
         catch (err) {
             console.error('Failed to delete message:', err);
@@ -635,6 +660,120 @@
     document.addEventListener('scroll', hideContextMenu, true);
     window.addEventListener('resize', hideContextMenu);
 
+    async function fetchAndRenderGroupMessages() {
+        if (!selectedGroupId) return;
+        const res = await apiFetch(`/api/groups/${selectedGroupId}/messages`);
+        if (res.ok) {
+            const data = await res.json();
+            renderGroupMessages(data.messages || data || []);
+        }
+    }
+
+    function renderGroupMessages(messages) {
+        const listEl = document.getElementById('messages-list');
+        if (!listEl) return;
+        listEl.innerHTML = '';
+        const msgs = Array.isArray(messages) ? messages : (messages.messages || []);
+        const seen = new Set();
+        msgs.forEach(m => {
+            if (m.accepted === 3) return;
+            if (seen.has(m.message_id)) return;
+            seen.add(m.message_id);
+            const messageDiv = el('div', 'message');
+            const isMine = m.sender_id === selfPublicKey;
+            if (isMine) messageDiv.classList.add('mine');
+            else messageDiv.classList.add('theirs');
+            messageDiv.appendChild(el('div', 'message-text', m.plaintext || '[decrypted]'));
+            const metaRow = el('div', 'message-meta');
+            if (!isMine) {
+                metaRow.appendChild(el('span', 'message-sender', m.sender_name || m.sender_id.substr(0, 8)));
+            }
+            metaRow.appendChild(el('span', 'message-time', formatMessageTime(m.timestamp)));
+            if (m.edited_at) {
+                metaRow.appendChild(el('span', 'message-edited', 'edited'));
+            }
+            if (isMine) {
+                const statusDiv = el('div', 'message-status');
+                if (m.accepted === 1) {
+                    statusDiv.textContent = '✓';
+                }
+                else if (m.accepted === 2) {
+                    statusDiv.textContent = '✗';
+                }
+                else {
+                    statusDiv.textContent = '⏳';
+                }
+                metaRow.appendChild(statusDiv);
+            }
+            messageDiv.appendChild(metaRow);
+            messageDiv.addEventListener('contextmenu', e => {
+                e.preventDefault();
+                showContextMenu(e.clientX, e.clientY, m);
+            });
+            listEl.appendChild(messageDiv);
+        });
+        listEl.scrollTop = listEl.scrollHeight;
+    }
+
+    function refreshGroups() {
+        apiFetch('/api/groups').then(res => res.ok ? res.json() : []).then(groups => {
+            contactsListEl.querySelectorAll('.group-row').forEach(r => r.remove());
+            (groups.groups || groups || []).forEach(g => {
+                const row = document.createElement('div');
+                row.className = 'group-row';
+                const infoDiv = document.createElement('div');
+                infoDiv.style.flex = '1';
+                infoDiv.style.minWidth = '0';
+                const name = document.createElement('span');
+                name.className = 'group-name';
+                name.textContent = g.name || g.group_id;
+                const latestDiv = document.createElement('div');
+                latestDiv.className = 'latest-message';
+                if (g.last_message) {
+                    const isSelf = g.last_message_sender_id === selfPublicKey;
+                    const senderLabel = isSelf ? 'You' : (g.last_message_sender_name || (g.last_message_sender_id || '').slice(0, 8));
+                    latestDiv.textContent = `${senderLabel}: ${g.last_message}`;
+                    const timeSpan = document.createElement('span');
+                    timeSpan.className = 'latest-message-time';
+                    timeSpan.textContent = formatClockTime(g.last_message_timestamp);
+                    row.appendChild(timeSpan);
+                } else {
+                    latestDiv.textContent = 'No messages yet';
+                }
+                row.dataset.lastTime = g.last_message_timestamp || '';
+                infoDiv.appendChild(name);
+                infoDiv.appendChild(latestDiv);
+                row.appendChild(infoDiv);
+                row.onclick = () => {
+                    const prevContact = contactsListEl.querySelector('.contact.selected');
+                    if (prevContact) prevContact.classList.remove('selected');
+                    const prevGroup = contactsListEl.querySelector('.group-row.selected');
+                    if (prevGroup) prevGroup.classList.remove('selected');
+                    selectedGroupId = g.group_id;
+                    selectedContactId = null;
+                    localStorage.removeItem('selectedContactId');
+                    row.classList.add('selected');
+                    document.getElementById('contact-name-text').textContent = g.name || g.group_id;
+                    chatHeaderEl.style.display = '';
+                    messageFieldEl.style.display = '';
+                    chatSettingsBtn.style.display = 'none';
+                    fetchAndRenderGroupMessages();
+                };
+                contactsListEl.appendChild(row);
+                if (selectedGroupId && g.group_id === selectedGroupId) {
+                    row.className += ' selected';
+                }
+            });
+            sortChatList();
+        });
+    }
+
+    function sortChatList() {
+        const rows = Array.from(contactsListEl.children);
+        rows.sort((a, b) => (Number(b.dataset.lastTime || 0)) - (Number(a.dataset.lastTime || 0)));
+        rows.forEach(r => contactsListEl.appendChild(r));
+    }
+
     async function fetchAndRenderMessages() {
         const messages = await fetchMessages();
         renderMessages(messages);
@@ -645,16 +784,17 @@
     }
 
     async function sendMessage(text) {
-        if (!selectedContactId) {
-            alert('Please select a contact first');
+        if (!selectedContactId && !selectedGroupId) {
+            alert('Please select a contact or group first');
             return;
         }
         if (!text.trim()) return;
         try {
-            const resp = await apiFetch(api.sendMessage, {
+            const isGroup = !!selectedGroupId;
+            const resp = await apiFetch(isGroup ? `/api/groups/${selectedGroupId}/messages` : api.sendMessage, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+                body: JSON.stringify(isGroup ? { text } : {
                     recipient_id: selectedContactId,
                     text: text
                 })
@@ -662,7 +802,12 @@
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             const data = await resp.json();
             pendingSelfMessageId = data.message_id;
-            await fetchAndRenderMessages();
+            if (isGroup) {
+                await fetchAndRenderGroupMessages();
+            } 
+            else {
+                await fetchAndRenderMessages();
+            }
             messageInputEl.value = '';
         } 
         catch (err) {
@@ -705,12 +850,10 @@
     });
     editBarCancelBtn.addEventListener('click', cancelEditing);
 
-    addContactBtnEl.addEventListener('click', () => {
-        addContactOverlayEl.style.display = 'flex';
-        addContactWindowEl.style.display = 'block';
-        addContactNameInput.value = '';
-        addContactIpInput.value = '';
-        addContactNameInput.focus();
+    addContactBtnEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const menuEl = document.getElementById('add-contact-menu');
+        menuEl.style.display = menuEl.style.display === 'flex' ? 'none' : 'flex';
     });
 
     function hideAddContactModal() {
@@ -723,6 +866,27 @@
         if (e.target === addContactOverlayEl) hideAddContactModal();
     });
 
+    document.querySelectorAll('.add-contact-menu-item').forEach(item => {
+        item.addEventListener('click', () => {
+            document.getElementById('add-contact-menu').style.display = 'none';
+            if (item.dataset.action === 'contact') {
+                addContactOverlayEl.style.display = 'flex';
+                addContactWindowEl.style.display = 'block';
+                addContactNameInput.value = '';
+                addContactIpInput.value = '';
+                addContactNameInput.focus();
+            } 
+            else {
+                openCreateGroupOverlay();
+            }
+        });
+    });
+
+    document.addEventListener('click', () => {
+        const menuEl = document.getElementById('add-contact-menu');
+        if (menuEl) menuEl.style.display = 'none';
+    });
+
     addContactConfirmBtn.addEventListener('click', async () => {
         const name = addContactNameInput.value.trim();
         const addr = addContactIpInput.value.trim();
@@ -731,8 +895,8 @@
             return;
         }
         try {
-            const pubKeyUrl = api.fetchRemotePublicKey(addr);
-            const resp = await fetch(pubKeyUrl);
+            const pubKeyUrl = `${api.remotePublicKey}?addr=${encodeURIComponent(addr)}`;
+            const resp = await apiFetch(pubKeyUrl);
             if (!resp.ok) throw new Error(`Failed to fetch public key: HTTP ${resp.status}`);
             const data = await resp.json();
             const remotePubKey = data.public_key;
@@ -779,11 +943,93 @@
         delete settingsWindowEl.dataset.editingContactId;
     }
 
-    settingsCancelBtn.addEventListener('click', hideSettingsModal);
-    settingsOverlayEl.addEventListener('click', e => {
-        if (e.target === settingsOverlayEl) hideSettingsModal();
+    const createGroupOverlayEl = document.getElementById('create-group-overlay');
+    const createGroupWindowEl = document.getElementById('create-group-window');
+    const createGroupConfirmBtn = document.getElementById('create-group-confirm');
+    const createGroupCancelBtn = document.getElementById('create-group-cancel');
+    const createGroupNameInput = document.getElementById('create-group-name');
+    const createGroupMembersList = document.getElementById('create-group-members-list');
+    let selectedCreateGroupMembers = new Set();
+
+    function renderCreateGroupMemberList(contacts) {
+        createGroupMembersList.innerHTML = '';
+        if (!contacts.length) {
+            createGroupMembersList.innerHTML = '<div class="create-group-members-empty">No contacts yet</div>';
+            return;
+        }
+        contacts.forEach(c => {
+            const row = el('div', 'create-group-member-row');
+            const checked = selectedCreateGroupMembers.has(c.contact_id);
+            row.classList.toggle('selected', checked);
+            const checkbox = el('span', 'create-group-member-check', checked ? '✓' : '');
+            const name = el('span', 'create-group-member-name', c.name || '(no name)');
+            row.appendChild(checkbox);
+            row.appendChild(name);
+            row.addEventListener('click', () => {
+                if (selectedCreateGroupMembers.has(c.contact_id)) {
+                    selectedCreateGroupMembers.delete(c.contact_id);
+                    checkbox.textContent = '';
+                } 
+                else {
+                    selectedCreateGroupMembers.add(c.contact_id);
+                    checkbox.textContent = '✓';
+                }
+                row.classList.toggle('selected', selectedCreateGroupMembers.has(c.contact_id));
+            });
+            createGroupMembersList.appendChild(row);
+        });
+    }
+
+    function openCreateGroupOverlay() {
+        selectedCreateGroupMembers = new Set();
+        createGroupNameInput.value = '';
+        createGroupMembersList.innerHTML = '';
+        fetchContacts().then(renderCreateGroupMemberList);
+        createGroupOverlayEl.style.display = 'flex';
+        createGroupWindowEl.style.display = 'block';
+    }
+    function closeCreateGroupOverlay() {
+        createGroupOverlayEl.style.display = 'none';
+        createGroupWindowEl.style.display = 'none';
+    }
+    createGroupCancelBtn.addEventListener('click', closeCreateGroupOverlay);
+    createGroupConfirmBtn.addEventListener('click', async () => {
+        const name = createGroupNameInput.value.trim();
+        if (!name) return;
+        const contacts = await fetchContacts();
+        const selectedContacts = contacts.filter(c => selectedCreateGroupMembers.has(c.contact_id));
+        closeCreateGroupOverlay();
+        try {
+            const res = await apiFetch('/api/groups/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, server_address: window.location.host })
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            const groupId = data.group_id;
+            for (const contact of selectedContacts) {
+                await apiFetch(`/api/groups/${groupId}/add_member`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        member_id: contact.contact_id,
+                        server_address: contact.server_address || '',
+                        self_server_address: window.location.host
+                    })
+                });
+            }
+            createGroupNameInput.value = '';
+            selectedCreateGroupMembers = new Set();
+            refreshGroups();
+        } 
+        catch (err) {
+            console.error('Failed to create group:', err);
+            alert('Failed to create group');
+        }
     });
 
+    settingsCancelBtn.addEventListener('click', hideSettingsModal);
     settingsConfirmBtn.addEventListener('click', async () => {
         const name = settingsNameInput.value.trim();
         const addr = settingsIpInput.value.trim();
@@ -851,25 +1097,46 @@
             try {
                 const data = JSON.parse(event.data);
                 if (data.type === 'new_message') {
-                    if (pendingSelfMessageId && data.message_id === pendingSelfMessageId) {
-                        pendingSelfMessageId = null;
-                    } 
-                    else {
+                    if (data.group_id) {
+                        if (selectedGroupId && data.group_id === selectedGroupId) {
+                            fetchAndRenderGroupMessages();
+                        }
+                        refreshGroups();
+                    } else {
+                        if (pendingSelfMessageId && data.message_id === pendingSelfMessageId) {
+                            pendingSelfMessageId = null;
+                        } 
+                        else {
+                            if (selectedContactId && data.contact_id === selectedContactId) {
+                                fetchAndRenderMessages();
+                            }
+                        }
+                        refreshContacts();
+                    }
+                } 
+                else if (data.type === 'edit_message') {
+                    if (data.group_id) {
+                        if (selectedGroupId && data.group_id === selectedGroupId) {
+                            fetchAndRenderGroupMessages();
+                        }
+                        refreshGroups();
+                    } else {
                         if (selectedContactId && data.contact_id === selectedContactId) {
                             fetchAndRenderMessages();
                         }
                     }
                     refreshContacts();
-                } 
-                else if (data.type === 'edit_message') {
-                    if (selectedContactId && data.contact_id === selectedContactId) {
-                        fetchAndRenderMessages();
-                    }
-                    refreshContacts();
                 }
                 else if (data.type === 'delete_message') {
-                    if (selectedContactId && data.contact_id === selectedContactId) {
-                        fetchAndRenderMessages();
+                    if (data.group_id) {
+                        if (selectedGroupId && data.group_id === selectedGroupId) {
+                            fetchAndRenderGroupMessages();
+                        }
+                        refreshGroups();
+                    } else {
+                        if (selectedContactId && data.contact_id === selectedContactId) {
+                            fetchAndRenderMessages();
+                        }
                     }
                     refreshContacts();
                 }
