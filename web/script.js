@@ -386,7 +386,9 @@
                     latestDiv.textContent = 'No messages yet';
                 } 
                 else {
-                    latestDiv.textContent = `Latest message: ${msg.plaintext}`;
+                    const isSelf = msg.sender_id === selfPublicKey;
+                    const senderLabel = isSelf ? 'You' : (contact.name || (msg.sender_id || '').slice(0, 8));
+                    latestDiv.textContent = `${senderLabel}: ${msg.plaintext}`;
                     const timeSpan = el('span', 'latest-message-time', formatClockTime(msg.timestamp));
                     contactDiv.appendChild(timeSpan);
                 }
