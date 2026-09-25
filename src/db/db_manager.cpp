@@ -521,7 +521,7 @@ std::vector<db_manager::contact_info> db_manager::get_contacts_with_latest_messa
         const char *sql_latest =
             "SELECT message_id, sender_id, recipient_id, group_id, plaintext, ciphertext, accepted, timestamp, edited_at, edit_accepted, delete_accepted, deleted_at "
             "FROM messages "
-            "WHERE ((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)) AND accepted != 3 "
+            "WHERE ((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)) AND group_id = '' AND accepted != 3 "
             "ORDER BY timestamp DESC LIMIT 1;";
         sqlite3_stmt* stmt_latest = nullptr;
         if (sqlite3_prepare_v2(db_.get(), sql_latest, -1, &stmt_latest, nullptr) == SQLITE_OK) {
@@ -562,7 +562,7 @@ std::vector<db_manager::message> db_manager::get_messages_between(const std::str
     const char *sql =
         "SELECT message_id, sender_id, recipient_id, group_id, plaintext, ciphertext, accepted, timestamp, edited_at, edit_accepted, delete_accepted, deleted_at "
         "FROM messages "
-        "WHERE ((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)) AND accepted != 3 "
+        "WHERE ((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)) AND group_id = '' AND accepted != 3 "
         "ORDER BY timestamp ASC;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_.get(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
