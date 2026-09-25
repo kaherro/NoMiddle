@@ -1029,6 +1029,7 @@
         }
     });
 
+    settingsCancelBtn.addEventListener('click', hideSettingsModal);
     settingsConfirmBtn.addEventListener('click', async () => {
         const name = settingsNameInput.value.trim();
         const addr = settingsIpInput.value.trim();
