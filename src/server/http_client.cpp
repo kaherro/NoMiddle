@@ -16,3 +16,19 @@ std::optional<int64_t> send_message(const std::string& url, const std::string& j
 
     return r.status_code;
 }
+
+std::optional<std::string> fetch_remote(const std::string& url) {
+    cpr::Response r = cpr::Get(
+        cpr::Url{url},
+        cpr::Timeout{10000},
+        cpr::VerifySsl{false}
+    );
+
+    if (r.error.code != cpr::ErrorCode::OK) {
+        return std::nullopt;
+    }
+    if (r.status_code != 200) {
+        return std::nullopt;
+    }
+    return r.text;
+}

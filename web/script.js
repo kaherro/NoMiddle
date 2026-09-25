@@ -13,19 +13,7 @@
         editMessage: `${baseUrl}/api/edit_message`,
         deleteMessage: `${baseUrl}/api/delete_message`,
         upsertContact: `${baseUrl}/api/upsert_contact`,
-        fetchRemotePublicKey: (addr) => {
-            let url = addr;
-            if (url.startsWith('http://')) {
-                url = url.substring(7);
-            }
-            else if (url.startsWith('https://')) {
-                url = url.substring(8);
-            }
-            if (url.endsWith('/')) {
-                url = url.slice(0, -1);
-            }
-            return `https://${url}/api/public_key`;
-        }
+        remotePublicKey: `${baseUrl}/api/remote_public_key`,
     };
 
     const AUTH_ID_KEY = 'nmd_client_id';
@@ -895,8 +883,8 @@
             return;
         }
         try {
-            const pubKeyUrl = api.fetchRemotePublicKey(addr);
-            const resp = await fetch(pubKeyUrl);
+            const pubKeyUrl = `${api.remotePublicKey}?addr=${encodeURIComponent(addr)}`;
+            const resp = await apiFetch(pubKeyUrl);
             if (!resp.ok) throw new Error(`Failed to fetch public key: HTTP ${resp.status}`);
             const data = await resp.json();
             const remotePubKey = data.public_key;

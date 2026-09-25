@@ -884,6 +884,31 @@ int main(int argc, char* argv[]) {
         return crow::response(200);
     });
 
+CROW_ROUTE(app, "/api/remote_public_key").methods(crow::HTTPMethod::GET)
+    ([&is_authed](const crow::request &req) {
+        if (!is_authed(req)) {
+            return crow::response(401, crow::json::wvalue{{"error", "Unauthorized"}});
+        }
+        const char* addr_cstr = req.url_params.get("addr");
+        if (!addr_cstr) {
+            return crow::response(400, crow::json::wvalue{{"error", "Missing addr parameter"}});
+        }
+        std::string server_address(addr_cstr);
+        cut_server_address(server_address);
+        if (server_address.empty()) {
+            return crow::response(400, crow::json::wvalue{{"error", "Invalid addr"}});
+        }
+        auto body = fetch_remote("https://" + server_address + "/api/public_key");
+        if (!body) {
+            return crow::response(502, crow::json::wvalue{{"error", "Failed to fetch remote public key"}});
+        }
+        crow::response res;
+        res.code = 200;
+        res.body = *body;
+        res.set_header("Content-Type", "application/json");
+        return res;
+    });
+
 CROW_ROUTE(app, "/api/public_key").methods(crow::HTTPMethod::GET)
     ([&self_public_key](const crow::request &req) {
         crow::json::wvalue result;
