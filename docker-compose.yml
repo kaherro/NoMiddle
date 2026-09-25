@@ -1,0 +1,28 @@
+services:
+  server:
+    build: .
+    command: ["./server", "${PORT}", "/data/NoMiddle.db", "none", "none"]
+    ports:
+      - "${PORT}:${PORT}"
+    volumes:
+      - nomiddle-data:/data
+    networks:
+      - nomiddle
+    restart: unless-stopped
+
+  ngrok:
+    image: ngrok/ngrok:alpine
+    depends_on:
+      - server
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    command: ["http", "--url=${NGROK_DOMAIN}", "http://server:${PORT}"]
+    networks:
+      - nomiddle
+    restart: unless-stopped
+
+networks:
+  nomiddle:
+
+volumes:
+  nomiddle-data:

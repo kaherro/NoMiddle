@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>NoMiddle</title>
+    <link rel="icon" type="image/x-icon" href="favicon.png">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    
+<div id="messenger-window">
+    <div id="left-column">
+        <div id="messenger-info">
+            <svg xmlns="http://w3.org" width="20" height="14" viewBox="0 0 20 14">
+                <line x1="6" y1="4" x2="14" y2="10" stroke="#4fd1ae" stroke-width="2.5" stroke-linecap="round"></line>
+                <circle cx="5" cy="3.5" r="3.5" fill="#4fd1ae"></circle>
+                <circle cx="15" cy="10.5" r="3.5" fill="#4fd1ae"></circle>
+            </svg>
+            <div id="messenger-naming">NoMiddle</div>
+            <button id="devices-button" title="Devices">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8b93a3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="3" width="20" height="14" rx="2"/>
+                    <line x1="8" y1="21" x2="16" y2="21"/>
+                    <line x1="12" y1="17" x2="12" y2="21"/>
+                </svg>
+            </button>
+        </div>
+        <div id="my-domain">
+            <div id="my-domain-label">My domain:</div>
+            <div id="my-domain-value">—</div>
+            <button id="my-domain-copy">Copy</button>
+        </div>
+        <div id="contacts">
+            <div id="contacts-header">
+                <div id="contacts-label">Chats</div>
+                <div id="add-contact">
+                    <button id="add-contact-button">+</button>
+                    <div id="add-contact-menu" style="display:none;">
+                        <div class="add-contact-menu-item" data-action="contact">Add contact</div>
+                        <div class="add-contact-menu-item" data-action="group">Create group</div>
+                    </div>
+                </div>
+            </div>
+            <div id="contacts-list"></div>
+        </div>
+    </div>
+    <div id="right-column">
+        <div id="contact-name-right">
+            <span id="contact-name-text"></span>
+            <button id="chat-settings-button" class="settings-button chat-settings-button">
+                <div class="settings-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8b93a3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                        <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" />
+                        <path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
+                    </svg>
+                </div>
+            </button>
+        </div>
+        <div id="messages-list">
+            <div class="chat-placeholder">Select a chat to start messaging</div>
+        </div>
+        <div id="message-field">
+            <div id="edit-bar" style="display:none;">
+                <span id="edit-bar-label">Editing message</span>
+                <button id="edit-bar-cancel">✕</button>
+            </div>
+            <div id="message-field-row">
+                <input type="text" id="message-text" placeholder="Message">
+                <button id="send-button">Send</button>
+            </div>
+        </div>
+    </div>
+    <div class="modal-overlay" id="add-contact-overlay">
+        <div id="add-contact-window">
+            <div id="add-contact-header">Add Contact</div>
+            <input type="text" class="contact-input" id="add-contact-input-name" placeholder="Enter name">
+            <input type="text" class="contact-input" id="add-contact-input-ip" placeholder="Enter ip or domain">
+            <button id="add-contact-confirm">Add</button>
+            <button id="add-contact-cancel">Cancel</button>
+        </div>
+    </div>
+    <div class="modal-overlay" id="settings-overlay">
+        <div id="settings-window">
+            <div id="settings-header">Settings</div>
+            <input type="text" class="contact-input" id="settings-input-name" placeholder="Enter name">
+            <input type="text" class="contact-input" id="settings-input-ip" placeholder="Enter ip or domain">
+            <button id="settings-confirm">Save</button>
+            <button id="settings-cancel">Cancel</button>
+        </div>
+    </div>
+    <div class="modal-overlay" id="approval-overlay">
+        <div id="approval-window">
+            <div id="approval-header">New device request</div>
+            <div id="approval-device-name"></div>
+            <button id="approval-approve-btn">Approve</button>
+            <button id="approval-reject-btn">Reject</button>
+        </div>
+    </div>
+    <div class="modal-overlay" id="devices-overlay">
+        <div id="devices-window">
+            <div id="devices-header">Devices</div>
+            <div id="devices-list"></div>
+            <button id="devices-close">Close</button>
+        </div>
+    </div>
+    <div class="modal-overlay" id="create-group-overlay">
+        <div id="create-group-window">
+            <div id="create-group-header">New Group</div>
+            <input type="text" id="create-group-name" placeholder="Group name">
+            <div id="create-group-members-label">Add members (optional)</div>
+            <div id="create-group-members-list"></div>
+            <div id="create-group-buttons">
+                <button id="create-group-confirm">Create</button>
+                <button id="create-group-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="lock-screen">
+        <div id="lock-box">
+            <div id="lock-message"></div>
+            <div id="lock-register">
+                <input type="text" id="lock-device-name" placeholder="Device name">
+                <button id="lock-request-btn">Request access</button>
+            </div>
+            <div id="lock-waiting" style="display:none;"></div>
+            <button id="lock-refresh">Reload</button>
+        </div>
+    </div>
+
+<script src="script.js"></script>
+</body>
+</html>
