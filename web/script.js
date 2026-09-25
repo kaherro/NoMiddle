@@ -493,6 +493,7 @@
             if (msg.edited_at) {
                 metaRow.appendChild(el('span', 'message-edited', 'edited'));
             }
+            metaRow.appendChild(el('span', 'message-time', formatMessageTime(msg.timestamp)));
             if (isMine) {
                 const statusDiv = el('div', 'message-status');
                 if (msg.accepted === 1) {
